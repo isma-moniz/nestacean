@@ -15,6 +15,5 @@ impl NES {
     }
     pub fn tick(&mut self) {
         self.clock += 1;
-        self.cpu.catch_up(self.clock);
     }
 }
