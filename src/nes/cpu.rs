@@ -11,6 +11,8 @@ enum MicroOp {
     LoadYPlaceholder,
     Return,
     ReadAccumulator,
+    LoadAccumulatorImmediate,
+    LoadXAccumulator,
 }
 
 pub struct Cpu {
@@ -50,11 +52,11 @@ impl Cpu {
         match opcode {
             0xA9 => {
                 // LDA
-                VecDeque::from(vec![MicroOp::ReadImmediate, MicroOp::LoadAccPlaceholder])
+                VecDeque::from(vec![MicroOp::LoadAccumulatorImmediate])
             }
             0xAA => {
                 // TAX
-                VecDeque::from(vec![MicroOp::ReadAccumulator, MicroOp::LoadXPlaceholder])
+                VecDeque::from(vec![MicroOp::LoadXAccumulator])
             }
             0x00 => {
                 // RETURN
@@ -119,6 +121,41 @@ impl Cpu {
                     self.status_p = self.status_p & 0b0111_1111;
                 }
             }
+            MicroOp::LoadAccumulatorImmediate => {
+                let value = mem[self.pc as usize];
+                self.pc += 1;
+                self.accumulator = value;
+
+                //set zero flag
+                if self.accumulator == 0x00 {
+                    self.status_p = self.status_p | 0b0000_0010;
+                } else {
+                    self.status_p = self.status_p & 0b1111_1101;
+                }
+                // set negative flag
+                if self.accumulator & 0b1000_0000 != 0 {
+                    self.status_p = self.status_p | 0b1000_0000;
+                } else {
+                    self.status_p = self.status_p & 0b0111_1111;
+                }
+            }
+            MicroOp::LoadXAccumulator => {
+                let value = self.accumulator;
+                self.index_x = value;
+
+                // set zero flag
+                if self.index_x == 0x00 {
+                    self.status_p = self.status_p | 0b0000_0010;
+                } else {
+                    self.status_p = self.status_p & 0b1111_1101;
+                }
+                // set negative flag
+                if self.index_x & 0b1000_0000 != 0 {
+                    self.status_p = self.status_p | 0b1000_0000;
+                } else {
+                    self.status_p = self.status_p & 0b0111_1111;
+                }
+            }
             MicroOp::Return => {
                 return;
             }
@@ -137,10 +174,9 @@ mod test {
     #[test]
     fn test_lda() {
         let mut cpu = Cpu::new();
-        let mut mem: [u8; 3] = [0xA9, 0x05, 0x00];
-        cpu.tick(&mut mem); //fetch
-        cpu.tick(&mut mem); //ReadImmediate
-        cpu.tick(&mut mem); // LoadAccumulator
+        let mut mem: [u8; 3] = [0xA9, 0x05, 0xFF];
+        cpu.tick(&mut mem); //fetch and decode
+        cpu.tick(&mut mem); //LoadAccumulatorImmediate
         assert_eq!(cpu.accumulator, 0x05);
         assert_eq!(cpu.status_p & 0b0000_0010, 0);
         assert_eq!(cpu.status_p & 0b1000_0000, 0);
@@ -149,10 +185,9 @@ mod test {
     #[test]
     fn test_lda_zeroflag() {
         let mut cpu = Cpu::new();
-        let mut mem: [u8; 3] = [0xA9, 0x00, 0x00];
-        cpu.tick(&mut mem); //fetch
-        cpu.tick(&mut mem); //ReadImmediate
-        cpu.tick(&mut mem); // LoadAccumulator
+        let mut mem: [u8; 3] = [0xA9, 0x00, 0xFF];
+        cpu.tick(&mut mem); //fetch and decode
+        cpu.tick(&mut mem); //LoadAccumulatorImmediate
         assert_eq!(cpu.accumulator, 0x00);
         assert_eq!(cpu.status_p & 0b0000_0010, 0b10);
         assert_eq!(cpu.status_p & 0b1000_0000, 0);
@@ -161,10 +196,9 @@ mod test {
     #[test]
     fn test_lda_negflag() {
         let mut cpu = Cpu::new();
-        let mut mem: [u8; 3] = [0xA9, 0xFF, 0x00];
-        cpu.tick(&mut mem); //fetch
-        cpu.tick(&mut mem); //ReadImmediate
-        cpu.tick(&mut mem); // LoadAccumulator
+        let mut mem: [u8; 3] = [0xA9, 0xFF, 0xFF];
+        cpu.tick(&mut mem); //fetch and decode
+        cpu.tick(&mut mem); //LoadAccumulatorImmediate
         assert_eq!(cpu.accumulator, 0xFF);
         assert_eq!(cpu.status_p & 0b0000_0010, 0);
         assert_eq!(cpu.status_p & 0b1000_0000, 0b1000_0000);
@@ -174,11 +208,10 @@ mod test {
     #[test]
     fn test_tax() {
         let mut cpu = Cpu::new();
-        let mut mem: [u8; 3] = [0xAA, 0x00, 0x00];
+        let mut mem: [u8; 3] = [0xAA, 0x00, 0xFF];
         cpu.accumulator = 0x05;
-        cpu.tick(&mut mem); //fetch
-        cpu.tick(&mut mem); //ReadAccumulator
-        cpu.tick(&mut mem); //LoadX
+        cpu.tick(&mut mem); //fetch and decode
+        cpu.tick(&mut mem); //LoadXAccumulator
         assert_eq!(cpu.index_x, 0x05);
         assert_eq!(cpu.status_p & 0b0000_0010, 0);
         assert_eq!(cpu.status_p & 0b1000_0000, 0);
@@ -187,11 +220,10 @@ mod test {
     #[test]
     fn test_tax_zeroflag() {
         let mut cpu = Cpu::new();
-        let mut mem: [u8; 3] = [0xAA, 0x00, 0x00];
+        let mut mem: [u8; 3] = [0xAA, 0x00, 0xFF];
         cpu.accumulator = 0x00;
-        cpu.tick(&mut mem); //fetch
-        cpu.tick(&mut mem); //ReadAccumulator
-        cpu.tick(&mut mem); //LoadX
+        cpu.tick(&mut mem); //fetch and decode
+        cpu.tick(&mut mem); //LoadXAccumulator
         assert_eq!(cpu.index_x, 0x00);
         assert_eq!(cpu.status_p & 0b0000_0010, 0b10);
         assert_eq!(cpu.status_p & 0b1000_0000, 0);
@@ -200,11 +232,10 @@ mod test {
     #[test]
     fn test_tax_negflag() {
         let mut cpu = Cpu::new();
-        let mut mem: [u8; 3] = [0xAA, 0x00, 0x00];
+        let mut mem: [u8; 3] = [0xAA, 0x00, 0xFF];
         cpu.accumulator = 0xFF;
-        cpu.tick(&mut mem); //fetch
-        cpu.tick(&mut mem); //ReadAccumulator
-        cpu.tick(&mut mem); //LoadX
+        cpu.tick(&mut mem); //fetch and decode
+        cpu.tick(&mut mem); //LoadXAccumulator
         assert_eq!(cpu.index_x, 0xFF);
         assert_eq!(cpu.status_p & 0b0000_0010, 0);
         assert_eq!(cpu.status_p & 0b1000_0000, 0b1000_0000);
