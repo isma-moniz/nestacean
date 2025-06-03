@@ -1,3 +1,10 @@
+mod nes;
+use nes::NES;
+
 fn main() {
-    println!("Hello, world!");
+    let mut nes = NES::new();
+    loop {
+        //TODO: only interrupted with manual interrupts right now
+        nes.tick();
+    }
 }
