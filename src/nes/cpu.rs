@@ -1,9 +1,16 @@
 use std::collections::VecDeque;
 
+#[derive(Debug)]
 enum MicroOp {
     ReadImmediate,
     LoadAccumulator(u8),
+    LoadAccPlaceholder,
+    LoadX(u8),
+    LoadXPlaceholder,
+    LoadY(u8),
+    LoadYPlaceholder,
     Return,
+    ReadAccumulator,
 }
 
 pub struct Cpu {
@@ -34,8 +41,7 @@ impl Cpu {
             let opcode = mem[self.pc as usize];
             self.pc += 1;
             self.current_inst = self.decode_opcode(opcode);
-        }
-        if let Some(op) = self.current_inst.pop_front() {
+        } else if let Some(op) = self.current_inst.pop_front() {
             self.execute_micro_op(op, mem);
         }
     }
@@ -44,7 +50,11 @@ impl Cpu {
         match opcode {
             0xA9 => {
                 // LDA
-                VecDeque::from(vec![MicroOp::ReadImmediate])
+                VecDeque::from(vec![MicroOp::ReadImmediate, MicroOp::LoadAccPlaceholder])
+            }
+            0xAA => {
+                // TAX
+                VecDeque::from(vec![MicroOp::ReadAccumulator, MicroOp::LoadXPlaceholder])
             }
             0x00 => {
                 // RETURN
@@ -58,9 +68,26 @@ impl Cpu {
         match operation {
             MicroOp::ReadImmediate => {
                 let value = mem[self.pc as usize];
-                // self.pc += 1;
-                self.current_inst
-                    .push_front(MicroOp::LoadAccumulator(value));
+                self.pc += 1;
+
+                match self.current_inst.pop_front() {
+                    Some(MicroOp::LoadAccPlaceholder) => {
+                        self.current_inst
+                            .push_front(MicroOp::LoadAccumulator(value));
+                    }
+                    Some(other) => panic!("Unexpected micro-op after ReadImmediate: {:?}", other),
+                    None => panic!("No micro-op after ReadImmediate"),
+                }
+            }
+            MicroOp::ReadAccumulator => {
+                let value = self.accumulator;
+                match self.current_inst.pop_front() {
+                    Some(MicroOp::LoadXPlaceholder) => {
+                        self.current_inst.push_front(MicroOp::LoadX(value));
+                    }
+                    Some(other) => panic!("Unexpected micro-op after ReadAccumulator: {:?}", other),
+                    None => panic!("No micro-op after ReadAccumulator"),
+                }
             }
             MicroOp::LoadAccumulator(value) => {
                 self.accumulator = value;
@@ -77,21 +104,40 @@ impl Cpu {
                     self.status_p = self.status_p & 0b0111_1111;
                 }
             }
+            MicroOp::LoadX(value) => {
+                self.index_x = value;
+                // set zero flag
+                if self.index_x == 0x00 {
+                    self.status_p = self.status_p | 0b0000_0010;
+                } else {
+                    self.status_p = self.status_p & 0b1111_1101;
+                }
+                // set negative flag
+                if self.index_x & 0b1000_0000 != 0 {
+                    self.status_p = self.status_p | 0b1000_0000;
+                } else {
+                    self.status_p = self.status_p & 0b0111_1111;
+                }
+            }
             MicroOp::Return => {
                 return;
             }
+            _ => unimplemented!(),
         }
     }
 }
+
+// TESTING AREA
 
 #[cfg(test)]
 mod test {
     use super::*;
 
+    // LDA tests
     #[test]
     fn test_lda() {
         let mut cpu = Cpu::new();
-        let mut mem: [u8; 2] = [0xA9, 0x05];
+        let mut mem: [u8; 3] = [0xA9, 0x05, 0x00];
         cpu.tick(&mut mem); //fetch
         cpu.tick(&mut mem); //ReadImmediate
         cpu.tick(&mut mem); // LoadAccumulator
@@ -103,12 +149,64 @@ mod test {
     #[test]
     fn test_lda_zeroflag() {
         let mut cpu = Cpu::new();
-        let mut mem: [u8; 2] = [0xA9, 0x00];
+        let mut mem: [u8; 3] = [0xA9, 0x00, 0x00];
         cpu.tick(&mut mem); //fetch
         cpu.tick(&mut mem); //ReadImmediate
         cpu.tick(&mut mem); // LoadAccumulator
         assert_eq!(cpu.accumulator, 0x00);
         assert_eq!(cpu.status_p & 0b0000_0010, 0b10);
         assert_eq!(cpu.status_p & 0b1000_0000, 0);
+    }
+
+    #[test]
+    fn test_lda_negflag() {
+        let mut cpu = Cpu::new();
+        let mut mem: [u8; 3] = [0xA9, 0xFF, 0x00];
+        cpu.tick(&mut mem); //fetch
+        cpu.tick(&mut mem); //ReadImmediate
+        cpu.tick(&mut mem); // LoadAccumulator
+        assert_eq!(cpu.accumulator, 0xFF);
+        assert_eq!(cpu.status_p & 0b0000_0010, 0);
+        assert_eq!(cpu.status_p & 0b1000_0000, 0b1000_0000);
+    }
+
+    // TAX tests
+    #[test]
+    fn test_tax() {
+        let mut cpu = Cpu::new();
+        let mut mem: [u8; 3] = [0xAA, 0x00, 0x00];
+        cpu.accumulator = 0x05;
+        cpu.tick(&mut mem); //fetch
+        cpu.tick(&mut mem); //ReadAccumulator
+        cpu.tick(&mut mem); //LoadX
+        assert_eq!(cpu.index_x, 0x05);
+        assert_eq!(cpu.status_p & 0b0000_0010, 0);
+        assert_eq!(cpu.status_p & 0b1000_0000, 0);
+    }
+
+    #[test]
+    fn test_tax_zeroflag() {
+        let mut cpu = Cpu::new();
+        let mut mem: [u8; 3] = [0xAA, 0x00, 0x00];
+        cpu.accumulator = 0x00;
+        cpu.tick(&mut mem); //fetch
+        cpu.tick(&mut mem); //ReadAccumulator
+        cpu.tick(&mut mem); //LoadX
+        assert_eq!(cpu.index_x, 0x00);
+        assert_eq!(cpu.status_p & 0b0000_0010, 0b10);
+        assert_eq!(cpu.status_p & 0b1000_0000, 0);
+    }
+
+    #[test]
+    fn test_tax_negflag() {
+        let mut cpu = Cpu::new();
+        let mut mem: [u8; 3] = [0xAA, 0x00, 0x00];
+        cpu.accumulator = 0xFF;
+        cpu.tick(&mut mem); //fetch
+        cpu.tick(&mut mem); //ReadAccumulator
+        cpu.tick(&mut mem); //LoadX
+        assert_eq!(cpu.index_x, 0xFF);
+        assert_eq!(cpu.status_p & 0b0000_0010, 0);
+        assert_eq!(cpu.status_p & 0b1000_0000, 0b1000_0000);
     }
 }
