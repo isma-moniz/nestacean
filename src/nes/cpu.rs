@@ -9,10 +9,11 @@ enum MicroOp {
     LoadXPlaceholder,
     LoadY(u8),
     LoadYPlaceholder,
-    Return,
+    Break,
     ReadAccumulator,
     LoadAccumulatorImmediate,
     LoadXAccumulator,
+    IncrementX,
 }
 
 pub struct Cpu {
@@ -58,9 +59,13 @@ impl Cpu {
                 // TAX
                 VecDeque::from(vec![MicroOp::LoadXAccumulator])
             }
+            0xE8 => {
+                // INX
+                VecDeque::from(vec![MicroOp::IncrementX])
+            }
             0x00 => {
-                // RETURN
-                VecDeque::from(vec![MicroOp::Return])
+                // BRK
+                VecDeque::from(vec![MicroOp::Break])
             }
             _ => unimplemented!(),
         }
@@ -156,7 +161,24 @@ impl Cpu {
                     self.status_p = self.status_p & 0b0111_1111;
                 }
             }
-            MicroOp::Return => {
+            MicroOp::IncrementX => {
+                self.index_x = self.index_x.wrapping_add(1);
+
+                // set zero flag
+                if self.index_x == 0x00 {
+                    self.status_p = self.status_p | 0b0000_0010;
+                } else {
+                    self.status_p = self.status_p & 0b1111_1101;
+                }
+                // set negative flag
+                if self.index_x & 0b1000_0000 != 0 {
+                    self.status_p = self.status_p | 0b1000_0000;
+                } else {
+                    self.status_p = self.status_p & 0b0111_1111;
+                }
+            }
+            MicroOp::Break => {
+                //TODO: this op is more complex. research and implement.
                 return;
             }
             _ => unimplemented!(),
@@ -239,5 +261,59 @@ mod test {
         assert_eq!(cpu.index_x, 0xFF);
         assert_eq!(cpu.status_p & 0b0000_0010, 0);
         assert_eq!(cpu.status_p & 0b1000_0000, 0b1000_0000);
+    }
+
+    // INX tests
+    #[test]
+    fn test_inx() {
+        let mut cpu = Cpu::new();
+        let mut mem: [u8; 3] = [0xE8, 0xFF, 0xFF];
+        cpu.index_x = 0x00;
+        cpu.tick(&mut mem); //fetch and decode
+        cpu.tick(&mut mem); //IncrementX
+        assert_eq!(cpu.index_x, 0b01);
+        assert_eq!(cpu.status_p & 0b0000_0010, 0);
+        assert_eq!(cpu.status_p & 0b1000_0000, 0);
+    }
+
+    #[test]
+    fn test_inx_zeroflag() {
+        let mut cpu = Cpu::new();
+        let mut mem: [u8; 3] = [0xE8, 0xFF, 0xFF];
+        cpu.index_x = 0xFF;
+        cpu.tick(&mut mem); //fetch and decode
+        cpu.tick(&mut mem); //IncrementX
+        assert_eq!(cpu.index_x, 0x00);
+        assert_eq!(cpu.status_p & 0b0000_0010, 0b10);
+        assert_eq!(cpu.status_p & 0b1000_0000, 0);
+    }
+
+    #[test]
+    fn test_inx_negflag() {
+        let mut cpu = Cpu::new();
+        let mut mem: [u8; 3] = [0xE8, 0xFF, 0xFF];
+        cpu.index_x = 0x7F;
+        cpu.tick(&mut mem); //fetch and decode
+        cpu.tick(&mut mem); //IncrementX
+        assert_eq!(cpu.index_x, 0x80);
+        assert_eq!(cpu.status_p & 0b0000_0010, 0);
+        assert_eq!(cpu.status_p & 0b1000_0000, 0b1000_0000);
+    }
+
+    // general testing
+    #[test]
+    fn test_5_ops() {
+        let mut cpu = Cpu::new();
+        let mut mem: [u8; 5] = [0xa9, 0xc0, 0xaa, 0xe8, 0x00];
+        cpu.tick(&mut mem); //fetch and decode
+        cpu.tick(&mut mem); //LoadAccumulatorImmediate
+        cpu.tick(&mut mem); //fetch and decode
+        cpu.tick(&mut mem); //LoadXAccumulator
+        cpu.tick(&mut mem); //fetch and decode
+        cpu.tick(&mut mem); //IncrementX
+        cpu.tick(&mut mem); //fetch and decode
+        cpu.tick(&mut mem); //Break
+
+        assert_eq!(cpu.index_x, 0xc1);
     }
 }
