@@ -24,6 +24,7 @@ pub struct Cpu {
     sp: u8,
     status_p: u8,
     current_inst: VecDeque<MicroOp>,
+    memory: [u8; 0xFFFF],
 }
 
 impl Cpu {
@@ -36,7 +37,34 @@ impl Cpu {
             sp: 0u8,
             status_p: 0u8,
             current_inst: VecDeque::new(),
+            memory: [0u8; 0xFFFF],
         }
+    }
+
+    fn mem_read(&self, pos: u16) -> u8 {
+        self.memory[pos as usize]
+    }
+
+    fn mem_read_u16(&self, pos: u16) -> u16 {
+        let low_byte = self.mem_read(pos) as u16;
+        let high_byte = self.mem_read(pos + 1) as u16;
+        (high_byte << 8) | low_byte
+    }
+
+    fn mem_write(&mut self, pos: u16, byte: u8) {
+        self.memory[pos as usize] = byte;
+    }
+
+    fn mem_write_u16(&mut self, pos: u16, byte: u16) {
+        let low_byte = (byte & 0xFF) as u8;
+        let high_byte = (byte >> 8) as u8;
+        self.mem_write(pos, low_byte);
+        self.mem_write(pos + 1, high_byte);
+    }
+
+    pub fn load_program(&mut self, program: &[u8]) {
+        self.memory[0x8000..(0x8000 + program.len())].copy_from_slice(&program[..]);
+        self.pc = 0x8000;
     }
 
     pub fn tick(&mut self, mem: &mut [u8]) {
