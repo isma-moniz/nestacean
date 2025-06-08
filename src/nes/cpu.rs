@@ -25,8 +25,10 @@ enum MicroOp {
     AddXtoPointerPlaceholder,
     AddXtoPointer(u8),
     FetchPointerBytePlaceholder,
+    FetchPointerByteWithYPlaceholder,
     FetchPointerLowByte(u8),
     FetchPointerHighByte(u8),
+    FetchPointerHighByteWithY(u8),
 }
 
 #[derive(Debug)]
@@ -176,6 +178,14 @@ impl Cpu {
                     MicroOp::LoadAccumulatorImmediate,
                 ])
             }
+            0xB1 => {
+                // LDA indirect indexed
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::FetchPointerByteWithYPlaceholder,
+                    MicroOp::LoadAccumulatorImmediate, // may add dummy cycle
+                ])
+            }
             0xAA => {
                 // TAX
                 VecDeque::from(vec![MicroOp::LoadXAccumulator])
@@ -208,6 +218,12 @@ impl Cpu {
             Some(MicroOp::FetchPointerBytePlaceholder) => {
                 self.current_inst
                     .push_front(MicroOp::FetchPointerHighByte(value as u8));
+                self.current_inst
+                    .push_front(MicroOp::FetchPointerLowByte(value as u8));
+            }
+            Some(MicroOp::FetchPointerByteWithYPlaceholder) => {
+                self.current_inst
+                    .push_front(MicroOp::FetchPointerHighByteWithY(value as u8));
                 self.current_inst
                     .push_front(MicroOp::FetchPointerLowByte(value as u8));
             }
@@ -259,7 +275,12 @@ impl Cpu {
                 self.temp_addr = self.mem_read(pointer as u16) as u16;
             }
             MicroOp::FetchPointerHighByte(pointer) => {
-                self.temp_addr |= ((pointer as u16 + 1) as u16) << 8;
+                self.temp_addr |= (((pointer as u16).wrapping_add(1)) as u16) << 8;
+                self.push_micro_from_placeholder(self.temp_addr);
+            }
+            MicroOp::FetchPointerHighByteWithY(pointer) => {
+                self.temp_addr |= (((pointer as u16).wrapping_add(1)) as u16) << 8;
+                self.temp_addr = self.temp_addr.wrapping_add(self.index_y as u16);
                 self.push_micro_from_placeholder(self.temp_addr);
             }
             MicroOp::LoadAccumulatorImmediate => {
