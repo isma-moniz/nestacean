@@ -21,6 +21,12 @@ enum MicroOp {
     LoadXAccumulator,
     IncrementX,
     DummyCycle,
+    FetchPointer,
+    AddXtoPointerPlaceholder,
+    AddXtoPointer(u8),
+    FetchPointerBytePlaceholder,
+    FetchPointerLowByte(u8),
+    FetchPointerHighByte(u8),
 }
 
 #[derive(Debug)]
@@ -161,6 +167,15 @@ impl Cpu {
                     MicroOp::LoadAccumulatorImmediate,
                 ])
             }
+            0xA1 => {
+                // LDA indexed indirect
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage, // does the same thing
+                    MicroOp::AddXtoPointerPlaceholder,
+                    MicroOp::FetchPointerBytePlaceholder, // will be 2 ops after processed
+                    MicroOp::LoadAccumulatorImmediate,
+                ])
+            }
             0xAA => {
                 // TAX
                 VecDeque::from(vec![MicroOp::LoadXAccumulator])
@@ -177,15 +192,24 @@ impl Cpu {
         }
     }
 
-    fn push_micro_from_placeholder(&mut self, address: u16) {
+    fn push_micro_from_placeholder(&mut self, value: u16) {
         match self.current_inst.pop_front() {
             Some(MicroOp::LoadAccumulatorImmediate) => {
                 self.current_inst
-                    .push_front(MicroOp::LoadAccumulatorFromAddress(address));
+                    .push_front(MicroOp::LoadAccumulatorFromAddress(value));
             }
             Some(MicroOp::AddXtoAddressPlaceholder) => {
+                self.current_inst.push_front(MicroOp::AddXtoAddress(value));
+            }
+            Some(MicroOp::AddXtoPointerPlaceholder) => {
                 self.current_inst
-                    .push_front(MicroOp::AddXtoAddress(address));
+                    .push_front(MicroOp::AddXtoPointer(value as u8));
+            }
+            Some(MicroOp::FetchPointerBytePlaceholder) => {
+                self.current_inst
+                    .push_front(MicroOp::FetchPointerHighByte(value as u8));
+                self.current_inst
+                    .push_front(MicroOp::FetchPointerLowByte(value as u8));
             }
             Some(other) => panic!("Unexpected micro-op: {:?}", other),
             None => panic!("No micro-op!"),
@@ -203,6 +227,10 @@ impl Cpu {
             MicroOp::AddXtoAddress(address) => {
                 let new_address = address.wrapping_add(self.index_x as u16);
                 self.push_micro_from_placeholder(new_address);
+            }
+            MicroOp::AddXtoPointer(pointer) => {
+                let new_pointer = pointer.wrapping_add(self.index_x);
+                self.push_micro_from_placeholder(new_pointer as u16);
             }
             MicroOp::FetchLowAddrByte => {
                 self.temp_addr = self.mem_read(self.pc) as u16;
@@ -225,6 +253,13 @@ impl Cpu {
                 self.pc += 1;
                 let new_addr = self.temp_addr.wrapping_add(self.index_y as u16);
                 self.page_crossed = (self.temp_addr & 0xFF) != (new_addr & 0xFF00);
+                self.push_micro_from_placeholder(self.temp_addr);
+            }
+            MicroOp::FetchPointerLowByte(pointer) => {
+                self.temp_addr = self.mem_read(pointer as u16) as u16;
+            }
+            MicroOp::FetchPointerHighByte(pointer) => {
+                self.temp_addr |= ((pointer as u16 + 1) as u16) << 8;
                 self.push_micro_from_placeholder(self.temp_addr);
             }
             MicroOp::LoadAccumulatorImmediate => {
