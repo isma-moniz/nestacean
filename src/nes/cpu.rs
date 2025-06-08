@@ -2,18 +2,32 @@ use std::collections::VecDeque;
 
 #[derive(Debug)]
 enum MicroOp {
-    ReadImmediate,
-    LoadAccumulator(u8),
     LoadAccPlaceholder,
-    LoadX(u8),
-    LoadXPlaceholder,
-    LoadY(u8),
-    LoadYPlaceholder,
     Break,
     ReadAccumulator,
     LoadAccumulatorImmediate,
+    LoadAccumulatorFromAddress(u8),
+    FetchLowAddrByte,
+    FetchHighAddrByte,
+    AddXtoAddressPlaceholder,
+    AddXtoAddress(u8),
+    FetchZeroPage,
     LoadXAccumulator,
     IncrementX,
+}
+
+#[derive(Debug)]
+enum AddressingMode {
+    Immediate,
+    ZeroPage,
+    ZeroPageX,
+    ZeroPageY,
+    Absolute,
+    AbsoluteX,
+    AbsoluteY,
+    IndirectX,
+    IndirectY,
+    NoneAddressing,
 }
 
 pub struct Cpu {
@@ -25,6 +39,7 @@ pub struct Cpu {
     status_p: u8,
     current_inst: VecDeque<MicroOp>,
     memory: [u8; 0xFFFF],
+    temp_addr: u8,
 }
 
 impl Cpu {
@@ -38,6 +53,7 @@ impl Cpu {
             status_p: 0u8,
             current_inst: VecDeque::new(),
             memory: [0u8; 0xFFFF],
+            temp_addr: 0u8,
         }
     }
 
@@ -62,6 +78,7 @@ impl Cpu {
         self.mem_write(pos + 1, high_byte);
     }
 
+    //TODO: might be redundant to have this and the self initializer. see load_program
     pub fn reset(&mut self) {
         self.accumulator = 0;
         self.index_x = 0;
@@ -69,13 +86,14 @@ impl Cpu {
         self.sp = 0;
         self.sp = 0;
         self.status_p = 0;
+        self.temp_addr = 0;
         self.current_inst = VecDeque::new();
         self.pc = self.mem_read_u16(0xFFFC);
     }
 
     pub fn load_program(&mut self, program: &[u8]) {
         self.memory[0x8000..(0x8000 + program.len())].copy_from_slice(&program[..]);
-        self.mem_write_u16(0xFFFC, 0x8000);
+        self.mem_write_u16(0xFFFC, 0x8000); // why not load the pc directly?
     }
 
     pub fn tick(&mut self) {
@@ -94,6 +112,29 @@ impl Cpu {
                 // LDA
                 VecDeque::from(vec![MicroOp::LoadAccumulatorImmediate])
             }
+            0xA5 => {
+                // LDA zero page
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::LoadAccumulatorImmediate,
+                ])
+            }
+            0xB5 => {
+                // LDA zero page + x
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::AddXtoAddressPlaceholder,
+                    MicroOp::LoadAccumulatorImmediate,
+                ])
+            }
+            0xAD => {
+                // LDA absolute
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByte,
+                    MicroOp::LoadAccumulatorImmediate,
+                ])
+            }
             0xAA => {
                 // TAX
                 VecDeque::from(vec![MicroOp::LoadXAccumulator])
@@ -110,34 +151,48 @@ impl Cpu {
         }
     }
 
+    fn push_micro_from_placeholder(&mut self, address: u8) {
+        match self.current_inst.pop_front() {
+            Some(MicroOp::LoadAccumulatorImmediate) => {
+                self.current_inst
+                    .push_front(MicroOp::LoadAccumulatorFromAddress(address));
+            }
+            Some(MicroOp::AddXtoAddressPlaceholder) => {
+                self.current_inst
+                    .push_front(MicroOp::AddXtoAddress(address));
+            }
+            Some(other) => panic!("Unexpected micro-op: {:?}", other),
+            None => panic!("No micro-op!"),
+        }
+    }
+
     fn execute_micro_op(&mut self, operation: MicroOp) {
         match operation {
-            MicroOp::ReadImmediate => {
-                let value = self.memory[self.pc as usize];
+            MicroOp::FetchZeroPage => {
+                let address = self.memory[self.pc as usize];
                 self.pc += 1;
 
-                match self.current_inst.pop_front() {
-                    Some(MicroOp::LoadAccPlaceholder) => {
-                        self.current_inst
-                            .push_front(MicroOp::LoadAccumulator(value));
-                    }
-                    Some(other) => panic!("Unexpected micro-op after ReadImmediate: {:?}", other),
-                    None => panic!("No micro-op after ReadImmediate"),
-                }
+                self.push_micro_from_placeholder(address);
             }
-            MicroOp::ReadAccumulator => {
-                let value = self.accumulator;
-                match self.current_inst.pop_front() {
-                    Some(MicroOp::LoadXPlaceholder) => {
-                        self.current_inst.push_front(MicroOp::LoadX(value));
-                    }
-                    Some(other) => panic!("Unexpected micro-op after ReadAccumulator: {:?}", other),
-                    None => panic!("No micro-op after ReadAccumulator"),
-                }
+            MicroOp::AddXtoAddress(address) => {
+                let new_address = address.wrapping_add(self.index_x);
+                self.push_micro_from_placeholder(new_address);
             }
-            MicroOp::LoadAccumulator(value) => {
+            MicroOp::FetchLowAddrByte => {
+                self.temp_addr = self.mem_read(self.pc);
+                self.pc += 1;
+            }
+            MicroOp::FetchHighAddrByte => {
+                self.temp_addr |= (self.mem_read(self.pc)) << 8;
+                self.pc += 1;
+                self.push_micro_from_placeholder(self.temp_addr);
+            }
+            MicroOp::LoadAccumulatorImmediate => {
+                let value = self.memory[self.pc as usize];
+                self.pc += 1;
                 self.accumulator = value;
-                // set zero flag
+
+                //set zero flag
                 if self.accumulator == 0x00 {
                     self.status_p = self.status_p | 0b0000_0010;
                 } else {
@@ -150,24 +205,8 @@ impl Cpu {
                     self.status_p = self.status_p & 0b0111_1111;
                 }
             }
-            MicroOp::LoadX(value) => {
-                self.index_x = value;
-                // set zero flag
-                if self.index_x == 0x00 {
-                    self.status_p = self.status_p | 0b0000_0010;
-                } else {
-                    self.status_p = self.status_p & 0b1111_1101;
-                }
-                // set negative flag
-                if self.index_x & 0b1000_0000 != 0 {
-                    self.status_p = self.status_p | 0b1000_0000;
-                } else {
-                    self.status_p = self.status_p & 0b0111_1111;
-                }
-            }
-            MicroOp::LoadAccumulatorImmediate => {
-                let value = self.memory[self.pc as usize];
-                self.pc += 1;
+            MicroOp::LoadAccumulatorFromAddress(address) => {
+                let value = self.memory[address as usize];
                 self.accumulator = value;
 
                 //set zero flag
