@@ -62,18 +62,29 @@ impl Cpu {
         self.mem_write(pos + 1, high_byte);
     }
 
-    pub fn load_program(&mut self, program: &[u8]) {
-        self.memory[0x8000..(0x8000 + program.len())].copy_from_slice(&program[..]);
-        self.pc = 0x8000;
+    pub fn reset(&mut self) {
+        self.accumulator = 0;
+        self.index_x = 0;
+        self.index_y = 0;
+        self.sp = 0;
+        self.sp = 0;
+        self.status_p = 0;
+        self.current_inst = VecDeque::new();
+        self.pc = self.mem_read_u16(0xFFFC);
     }
 
-    pub fn tick(&mut self, mem: &mut [u8]) {
+    pub fn load_program(&mut self, program: &[u8]) {
+        self.memory[0x8000..(0x8000 + program.len())].copy_from_slice(&program[..]);
+        self.mem_write_u16(0xFFFC, 0x8000);
+    }
+
+    pub fn tick(&mut self) {
         if self.current_inst.is_empty() {
-            let opcode = mem[self.pc as usize];
+            let opcode = self.memory[self.pc as usize];
             self.pc += 1;
             self.current_inst = self.decode_opcode(opcode);
         } else if let Some(op) = self.current_inst.pop_front() {
-            self.execute_micro_op(op, mem);
+            self.execute_micro_op(op);
         }
     }
 
@@ -99,10 +110,10 @@ impl Cpu {
         }
     }
 
-    fn execute_micro_op(&mut self, operation: MicroOp, mem: &[u8]) {
+    fn execute_micro_op(&mut self, operation: MicroOp) {
         match operation {
             MicroOp::ReadImmediate => {
-                let value = mem[self.pc as usize];
+                let value = self.memory[self.pc as usize];
                 self.pc += 1;
 
                 match self.current_inst.pop_front() {
@@ -155,7 +166,7 @@ impl Cpu {
                 }
             }
             MicroOp::LoadAccumulatorImmediate => {
-                let value = mem[self.pc as usize];
+                let value = self.memory[self.pc as usize];
                 self.pc += 1;
                 self.accumulator = value;
 
@@ -224,9 +235,11 @@ mod test {
     #[test]
     fn test_lda() {
         let mut cpu = Cpu::new();
-        let mut mem: [u8; 3] = [0xA9, 0x05, 0xFF];
-        cpu.tick(&mut mem); //fetch and decode
-        cpu.tick(&mut mem); //LoadAccumulatorImmediate
+        let mem: [u8; 3] = [0xA9, 0x05, 0xFF];
+        cpu.load_program(&mem);
+        cpu.reset();
+        cpu.tick(); //fetch and decode
+        cpu.tick(); //LoadAccumulatorImmediate
         assert_eq!(cpu.accumulator, 0x05);
         assert_eq!(cpu.status_p & 0b0000_0010, 0);
         assert_eq!(cpu.status_p & 0b1000_0000, 0);
@@ -235,9 +248,11 @@ mod test {
     #[test]
     fn test_lda_zeroflag() {
         let mut cpu = Cpu::new();
-        let mut mem: [u8; 3] = [0xA9, 0x00, 0xFF];
-        cpu.tick(&mut mem); //fetch and decode
-        cpu.tick(&mut mem); //LoadAccumulatorImmediate
+        let mem: [u8; 3] = [0xA9, 0x00, 0xFF];
+        cpu.load_program(&mem);
+        cpu.reset();
+        cpu.tick(); //fetch and decode
+        cpu.tick(); //LoadAccumulatorImmediate
         assert_eq!(cpu.accumulator, 0x00);
         assert_eq!(cpu.status_p & 0b0000_0010, 0b10);
         assert_eq!(cpu.status_p & 0b1000_0000, 0);
@@ -246,9 +261,11 @@ mod test {
     #[test]
     fn test_lda_negflag() {
         let mut cpu = Cpu::new();
-        let mut mem: [u8; 3] = [0xA9, 0xFF, 0xFF];
-        cpu.tick(&mut mem); //fetch and decode
-        cpu.tick(&mut mem); //LoadAccumulatorImmediate
+        let mem: [u8; 3] = [0xA9, 0xFF, 0xFF];
+        cpu.load_program(&mem);
+        cpu.reset();
+        cpu.tick(); //fetch and decode
+        cpu.tick(); //LoadAccumulatorImmediate
         assert_eq!(cpu.accumulator, 0xFF);
         assert_eq!(cpu.status_p & 0b0000_0010, 0);
         assert_eq!(cpu.status_p & 0b1000_0000, 0b1000_0000);
@@ -258,10 +275,12 @@ mod test {
     #[test]
     fn test_tax() {
         let mut cpu = Cpu::new();
-        let mut mem: [u8; 3] = [0xAA, 0x00, 0xFF];
+        let mem: [u8; 3] = [0xAA, 0x00, 0xFF];
+        cpu.load_program(&mem);
+        cpu.reset();
         cpu.accumulator = 0x05;
-        cpu.tick(&mut mem); //fetch and decode
-        cpu.tick(&mut mem); //LoadXAccumulator
+        cpu.tick(); //fetch and decode
+        cpu.tick(); //LoadXAccumulator
         assert_eq!(cpu.index_x, 0x05);
         assert_eq!(cpu.status_p & 0b0000_0010, 0);
         assert_eq!(cpu.status_p & 0b1000_0000, 0);
@@ -270,10 +289,12 @@ mod test {
     #[test]
     fn test_tax_zeroflag() {
         let mut cpu = Cpu::new();
-        let mut mem: [u8; 3] = [0xAA, 0x00, 0xFF];
+        let mem: [u8; 3] = [0xAA, 0x00, 0xFF];
+        cpu.load_program(&mem);
+        cpu.reset();
         cpu.accumulator = 0x00;
-        cpu.tick(&mut mem); //fetch and decode
-        cpu.tick(&mut mem); //LoadXAccumulator
+        cpu.tick(); //fetch and decode
+        cpu.tick(); //LoadXAccumulator
         assert_eq!(cpu.index_x, 0x00);
         assert_eq!(cpu.status_p & 0b0000_0010, 0b10);
         assert_eq!(cpu.status_p & 0b1000_0000, 0);
@@ -282,10 +303,12 @@ mod test {
     #[test]
     fn test_tax_negflag() {
         let mut cpu = Cpu::new();
-        let mut mem: [u8; 3] = [0xAA, 0x00, 0xFF];
+        let mem: [u8; 3] = [0xAA, 0x00, 0xFF];
+        cpu.load_program(&mem);
+        cpu.reset();
         cpu.accumulator = 0xFF;
-        cpu.tick(&mut mem); //fetch and decode
-        cpu.tick(&mut mem); //LoadXAccumulator
+        cpu.tick(); //fetch and decode
+        cpu.tick(); //LoadXAccumulator
         assert_eq!(cpu.index_x, 0xFF);
         assert_eq!(cpu.status_p & 0b0000_0010, 0);
         assert_eq!(cpu.status_p & 0b1000_0000, 0b1000_0000);
@@ -295,10 +318,12 @@ mod test {
     #[test]
     fn test_inx() {
         let mut cpu = Cpu::new();
-        let mut mem: [u8; 3] = [0xE8, 0xFF, 0xFF];
+        let mem: [u8; 3] = [0xE8, 0xFF, 0xFF];
+        cpu.load_program(&mem);
+        cpu.reset();
         cpu.index_x = 0x00;
-        cpu.tick(&mut mem); //fetch and decode
-        cpu.tick(&mut mem); //IncrementX
+        cpu.tick(); //fetch and decode
+        cpu.tick(); //IncrementX
         assert_eq!(cpu.index_x, 0b01);
         assert_eq!(cpu.status_p & 0b0000_0010, 0);
         assert_eq!(cpu.status_p & 0b1000_0000, 0);
@@ -307,10 +332,12 @@ mod test {
     #[test]
     fn test_inx_zeroflag() {
         let mut cpu = Cpu::new();
-        let mut mem: [u8; 3] = [0xE8, 0xFF, 0xFF];
+        let mem: [u8; 3] = [0xE8, 0xFF, 0xFF];
+        cpu.load_program(&mem);
+        cpu.reset();
         cpu.index_x = 0xFF;
-        cpu.tick(&mut mem); //fetch and decode
-        cpu.tick(&mut mem); //IncrementX
+        cpu.tick(); //fetch and decode
+        cpu.tick(); //IncrementX
         assert_eq!(cpu.index_x, 0x00);
         assert_eq!(cpu.status_p & 0b0000_0010, 0b10);
         assert_eq!(cpu.status_p & 0b1000_0000, 0);
@@ -319,10 +346,12 @@ mod test {
     #[test]
     fn test_inx_negflag() {
         let mut cpu = Cpu::new();
-        let mut mem: [u8; 3] = [0xE8, 0xFF, 0xFF];
+        let mem: [u8; 3] = [0xE8, 0xFF, 0xFF];
+        cpu.load_program(&mem);
+        cpu.reset();
         cpu.index_x = 0x7F;
-        cpu.tick(&mut mem); //fetch and decode
-        cpu.tick(&mut mem); //IncrementX
+        cpu.tick(); //fetch and decode
+        cpu.tick(); //IncrementX
         assert_eq!(cpu.index_x, 0x80);
         assert_eq!(cpu.status_p & 0b0000_0010, 0);
         assert_eq!(cpu.status_p & 0b1000_0000, 0b1000_0000);
@@ -332,15 +361,17 @@ mod test {
     #[test]
     fn test_5_ops() {
         let mut cpu = Cpu::new();
-        let mut mem: [u8; 5] = [0xa9, 0xc0, 0xaa, 0xe8, 0x00];
-        cpu.tick(&mut mem); //fetch and decode
-        cpu.tick(&mut mem); //LoadAccumulatorImmediate
-        cpu.tick(&mut mem); //fetch and decode
-        cpu.tick(&mut mem); //LoadXAccumulator
-        cpu.tick(&mut mem); //fetch and decode
-        cpu.tick(&mut mem); //IncrementX
-        cpu.tick(&mut mem); //fetch and decode
-        cpu.tick(&mut mem); //Break
+        let mem: [u8; 5] = [0xa9, 0xc0, 0xaa, 0xe8, 0x00];
+        cpu.load_program(&mem);
+        cpu.reset();
+        cpu.tick(); //fetch and decode
+        cpu.tick(); //LoadAccumulatorImmediate
+        cpu.tick(); //fetch and decode
+        cpu.tick(); //LoadXAccumulator
+        cpu.tick(); //fetch and decode
+        cpu.tick(); //IncrementX
+        cpu.tick(); //fetch and decode
+        cpu.tick(); //Break
 
         assert_eq!(cpu.index_x, 0xc1);
     }
