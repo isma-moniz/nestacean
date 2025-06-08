@@ -207,6 +207,9 @@ impl Cpu {
             Some(MicroOp::LoadAccumulatorImmediate) => {
                 self.current_inst
                     .push_front(MicroOp::LoadAccumulatorFromAddress(value));
+                if self.page_crossed {
+                    self.current_inst.push_front(MicroOp::DummyCycle);
+                }
             }
             Some(MicroOp::AddXtoAddressPlaceholder) => {
                 self.current_inst.push_front(MicroOp::AddXtoAddress(value));
@@ -245,7 +248,7 @@ impl Cpu {
                 self.push_micro_from_placeholder(new_address);
             }
             MicroOp::AddXtoPointer(pointer) => {
-                let new_pointer = pointer.wrapping_add(self.index_x);
+                let new_pointer: u8 = pointer.wrapping_add(self.index_x);
                 self.push_micro_from_placeholder(new_pointer as u16);
             }
             MicroOp::FetchLowAddrByte => {
@@ -268,18 +271,18 @@ impl Cpu {
                 self.temp_addr |= (self.mem_read(self.pc) as u16) << 8;
                 self.pc += 1;
                 let new_addr = self.temp_addr.wrapping_add(self.index_y as u16);
-                self.page_crossed = (self.temp_addr & 0xFF) != (new_addr & 0xFF00);
+                self.page_crossed = (self.temp_addr & 0xFF00) != (new_addr & 0xFF00);
                 self.push_micro_from_placeholder(self.temp_addr);
             }
             MicroOp::FetchPointerLowByte(pointer) => {
                 self.temp_addr = self.mem_read(pointer as u16) as u16;
             }
             MicroOp::FetchPointerHighByte(pointer) => {
-                self.temp_addr |= (((pointer as u16).wrapping_add(1)) as u16) << 8;
+                self.temp_addr |= (self.mem_read((pointer as u16).wrapping_add(1)) as u16) << 8;
                 self.push_micro_from_placeholder(self.temp_addr);
             }
             MicroOp::FetchPointerHighByteWithY(pointer) => {
-                self.temp_addr |= (((pointer as u16).wrapping_add(1)) as u16) << 8;
+                self.temp_addr |= (self.mem_read((pointer as u16).wrapping_add(1)) as u16) << 8;
                 self.temp_addr = self.temp_addr.wrapping_add(self.index_y as u16);
                 self.push_micro_from_placeholder(self.temp_addr);
             }
@@ -304,10 +307,6 @@ impl Cpu {
             MicroOp::LoadAccumulatorFromAddress(address) => {
                 let value = self.memory[address as usize];
                 self.accumulator = value;
-
-                if self.page_crossed {
-                    self.current_inst.push_front(MicroOp::DummyCycle);
-                }
 
                 //set zero flag
                 if self.accumulator == 0x00 {
