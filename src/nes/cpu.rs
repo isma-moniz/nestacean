@@ -6,14 +6,21 @@ enum MicroOp {
     Break,
     ReadAccumulator,
     LoadAccumulatorImmediate,
-    LoadAccumulatorFromAddress(u8),
+    LoadAccumulatorFromAddress(u16),
     FetchLowAddrByte,
     FetchHighAddrByte,
+    FetchHighAddrByteWithX,
+    FetchHighAddrByteWithY,
     AddXtoAddressPlaceholder,
-    AddXtoAddress(u8),
+    AddXtoAddress(u16),
+    AddXLoadImmediatePlaceholder,
+    AddXLoadImmediate(u16),
+    AddYLoadImmediatePlaceholder,
+    AddYLoadImmediate(u16),
     FetchZeroPage,
     LoadXAccumulator,
     IncrementX,
+    DummyCycle,
 }
 
 #[derive(Debug)]
@@ -39,7 +46,8 @@ pub struct Cpu {
     status_p: u8,
     current_inst: VecDeque<MicroOp>,
     memory: [u8; 0xFFFF],
-    temp_addr: u8,
+    temp_addr: u16,
+    page_crossed: bool,
 }
 
 impl Cpu {
@@ -53,7 +61,8 @@ impl Cpu {
             status_p: 0u8,
             current_inst: VecDeque::new(),
             memory: [0u8; 0xFFFF],
-            temp_addr: 0u8,
+            temp_addr: 0u16,
+            page_crossed: false,
         }
     }
 
@@ -87,6 +96,7 @@ impl Cpu {
         self.sp = 0;
         self.status_p = 0;
         self.temp_addr = 0;
+        self.page_crossed = false;
         self.current_inst = VecDeque::new();
         self.pc = self.mem_read_u16(0xFFFC);
     }
@@ -135,6 +145,22 @@ impl Cpu {
                     MicroOp::LoadAccumulatorImmediate,
                 ])
             }
+            0xBD => {
+                // LDA absolute + x
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByteWithX,
+                    MicroOp::LoadAccumulatorImmediate,
+                ])
+            }
+            0xB9 => {
+                // LDA absolute + y
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByteWithY,
+                    MicroOp::LoadAccumulatorImmediate,
+                ])
+            }
             0xAA => {
                 // TAX
                 VecDeque::from(vec![MicroOp::LoadXAccumulator])
@@ -151,7 +177,7 @@ impl Cpu {
         }
     }
 
-    fn push_micro_from_placeholder(&mut self, address: u8) {
+    fn push_micro_from_placeholder(&mut self, address: u16) {
         match self.current_inst.pop_front() {
             Some(MicroOp::LoadAccumulatorImmediate) => {
                 self.current_inst
@@ -172,19 +198,33 @@ impl Cpu {
                 let address = self.memory[self.pc as usize];
                 self.pc += 1;
 
-                self.push_micro_from_placeholder(address);
+                self.push_micro_from_placeholder(address as u16);
             }
             MicroOp::AddXtoAddress(address) => {
-                let new_address = address.wrapping_add(self.index_x);
+                let new_address = address.wrapping_add(self.index_x as u16);
                 self.push_micro_from_placeholder(new_address);
             }
             MicroOp::FetchLowAddrByte => {
-                self.temp_addr = self.mem_read(self.pc);
+                self.temp_addr = self.mem_read(self.pc) as u16;
                 self.pc += 1;
             }
             MicroOp::FetchHighAddrByte => {
-                self.temp_addr |= (self.mem_read(self.pc)) << 8;
+                self.temp_addr |= (self.mem_read(self.pc) as u16) << 8;
                 self.pc += 1;
+                self.push_micro_from_placeholder(self.temp_addr);
+            }
+            MicroOp::FetchHighAddrByteWithX => {
+                self.temp_addr |= (self.mem_read(self.pc) as u16) << 8;
+                self.pc += 1;
+                let new_addr = self.temp_addr.wrapping_add(self.index_x as u16);
+                self.page_crossed = (self.temp_addr & 0xFF00) != (new_addr & 0xFF00);
+                self.push_micro_from_placeholder(self.temp_addr);
+            }
+            MicroOp::FetchHighAddrByteWithY => {
+                self.temp_addr |= (self.mem_read(self.pc) as u16) << 8;
+                self.pc += 1;
+                let new_addr = self.temp_addr.wrapping_add(self.index_y as u16);
+                self.page_crossed = (self.temp_addr & 0xFF) != (new_addr & 0xFF00);
                 self.push_micro_from_placeholder(self.temp_addr);
             }
             MicroOp::LoadAccumulatorImmediate => {
@@ -208,6 +248,10 @@ impl Cpu {
             MicroOp::LoadAccumulatorFromAddress(address) => {
                 let value = self.memory[address as usize];
                 self.accumulator = value;
+
+                if self.page_crossed {
+                    self.current_inst.push_front(MicroOp::DummyCycle);
+                }
 
                 //set zero flag
                 if self.accumulator == 0x00 {
@@ -257,6 +301,9 @@ impl Cpu {
             }
             MicroOp::Break => {
                 //TODO: this op is more complex. research and implement.
+                return;
+            }
+            MicroOp::DummyCycle => {
                 return;
             }
             _ => unimplemented!(),
