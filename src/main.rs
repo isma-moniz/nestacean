@@ -1,5 +1,4 @@
-mod nes;
-use nes::NES;
+use nestacean::nes::NES;
 
 fn main() {
     let mut nes = NES::new();

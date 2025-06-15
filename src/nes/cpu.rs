@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 #[derive(Debug)]
-enum MicroOp {
+pub enum MicroOp {
     LoadAccPlaceholder,
     Break,
     ReadAccumulator,
@@ -349,5 +349,53 @@ impl Cpu {
             }
             _ => unimplemented!(),
         }
+    }
+
+    pub fn get_accumulator(&self) -> u8 {
+        self.accumulator
+    }
+
+    pub fn get_index_x(&self) -> u8 {
+        self.index_x
+    }
+
+    pub fn get_index_y(&self) -> u8 {
+        self.index_y
+    }
+
+    pub fn get_pc(&self) -> u16 {
+        self.pc
+    }
+
+    pub fn get_sp(&self) -> u8 {
+        self.sp
+    }
+
+    pub fn get_status_p(&self) -> u8 {
+        self.status_p
+    }
+
+    pub fn get_current_inst(&self) -> &VecDeque<MicroOp> {
+        &self.current_inst
+    }
+
+    pub fn get_memory(&mut self) -> &mut [u8; 0xFFFF] {
+        &mut self.memory
+    }
+
+    pub fn get_temp_addr(&self) -> u16 {
+        self.temp_addr
+    }
+
+    pub fn is_page_crossed(&self) -> bool {
+        self.page_crossed
+    }
+
+    pub fn set_accumulator(&mut self, val: u8) {
+        self.accumulator = val;
+    }
+
+    pub fn set_index_x(&mut self, val: u8) {
+        self.index_x = val;
     }
 }

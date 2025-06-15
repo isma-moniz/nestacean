@@ -1,4 +1,5 @@
-mod cpu;
+pub mod cpu;
+
 use cpu::Cpu;
 
 pub struct NES {
@@ -9,10 +10,11 @@ pub struct NES {
 impl NES {
     pub fn new() -> Self {
         Self {
-            clock: 0u64,
+            clock: 0,
             cpu: Cpu::new(),
         }
     }
+
     pub fn tick(&mut self) {
         self.clock += 1;
     }
