@@ -75,15 +75,139 @@ mod test {
     #[test]
     fn test_lda_absolute() {
         let mut cpu = Cpu::new();
-        let mem: [u8; 3] = [0xAD, 0x00, 0x80]; // LDA $8000
+        let mem: [u8; 3] = [0xAD, 0x00, 0x30]; // LDA $3000
         cpu.load_program(&mem);
         cpu.reset();
-        cpu.get_memory()[0x8000] = 0x55;
+        cpu.get_memory()[0x3000] = 0x55;
         cpu.tick(); // fetch and decode
         cpu.tick(); // FetchLowAddrByte
         cpu.tick(); // FetchHighAddrByte
         cpu.tick(); // LoadAccumulatorImmediate
         assert_eq!(cpu.get_accumulator(), 0x55);
+    }
+
+    #[test]
+    fn test_lda_absolute_x() {
+        let mut cpu = Cpu::new();
+        let mem: [u8; 3] = [0xBD, 0x00, 0x30];
+        cpu.load_program(&mem);
+        cpu.reset();
+        cpu.set_index_x(2u8);
+        cpu.get_memory()[0x3002] = 0x55;
+        cpu.tick(); // fetch and decode
+        cpu.tick(); // FetchLowAddrByte
+        cpu.tick(); // FetchHighAddrByteWithX
+        cpu.tick(); // LoadAccumulatorImmediate
+        assert_eq!(cpu.is_page_crossed(), false);
+        assert_eq!(cpu.get_accumulator(), 0x55);
+    }
+
+    #[test]
+    fn test_lda_absolute_x_pagecross() {
+        let mut cpu = Cpu::new();
+        let mem: [u8; 3] = [0xBD, 0xFF, 0x30];
+        cpu.load_program(&mem);
+        cpu.reset();
+        cpu.set_index_x(1u8);
+        cpu.get_memory()[0x3100] = 0x55;
+        cpu.tick(); // fetch and decode
+        cpu.tick(); // FetchLowAddrByte
+        cpu.tick(); // FetchHighAddrByteWithX
+        cpu.tick(); // DummyCycle
+        cpu.tick(); // LoadAccumulatorImmediate
+        assert_eq!(cpu.is_page_crossed(), true);
+        assert_eq!(cpu.get_accumulator(), 0x55);
+    }
+
+    #[test]
+    fn test_lda_absolute_y() {
+        let mut cpu = Cpu::new();
+        let mem: [u8; 3] = [0xB9, 0x00, 0x30];
+        cpu.load_program(&mem);
+        cpu.reset();
+        cpu.set_index_y(2u8);
+        cpu.get_memory()[0x3002] = 0x55;
+        cpu.tick(); // fetch and decode
+        cpu.tick(); // FetchLowAddrByte
+        cpu.tick(); // FetchHighAddrByteWithX
+        cpu.tick(); // LoadAccumulatorImmediate
+        assert_eq!(cpu.is_page_crossed(), false);
+        assert_eq!(cpu.get_accumulator(), 0x55);
+    }
+
+    #[test]
+    fn test_lda_absolute_y_pagecross() {
+        let mut cpu = Cpu::new();
+        let mem: [u8; 3] = [0xB9, 0xFF, 0x30];
+        cpu.load_program(&mem);
+        cpu.reset();
+        cpu.set_index_y(1u8);
+        cpu.get_memory()[0x3100] = 0x55;
+        cpu.tick(); // fetch and decode
+        cpu.tick(); // FetchLowAddrByte
+        cpu.tick(); // FetchHighAddrByteWithX
+        cpu.tick(); // DummyCycle
+        cpu.tick(); // LoadAccumulatorImmediate
+        assert_eq!(cpu.is_page_crossed(), true);
+        assert_eq!(cpu.get_accumulator(), 0x55);
+    }
+
+    #[test]
+    fn test_lda_indexed_indirect() {
+        let mut cpu = Cpu::new();
+        let mem: [u8; 3] = [0xA1, 0x50, 0x00];
+        cpu.load_program(&mem);
+        cpu.reset();
+        cpu.set_index_x(2u8);
+        cpu.get_memory()[0x0052] = 0x23;
+        cpu.get_memory()[0x0053] = 0x65;
+        cpu.get_memory()[0x6523] = 0x69;
+        cpu.tick(); // fetch and decode
+        cpu.tick(); // FetchZeroPage
+        cpu.tick(); // AddXtoPointer
+        cpu.tick(); // FetchPointerLowByte
+        cpu.tick(); // FetchPointerHighByte
+        cpu.tick(); // LoadAccumulatorImmediate
+        assert_eq!(cpu.get_accumulator(), 0x69);
+    }
+
+    #[test]
+    fn test_lda_indirect_indexed() {
+        let mut cpu = Cpu::new();
+        let mem: [u8; 3] = [0xB1, 0x50, 0x00];
+        cpu.load_program(&mem);
+        cpu.reset();
+        cpu.set_index_y(5u8);
+        cpu.get_memory()[0x50] = 0x34;
+        cpu.get_memory()[0x51] = 0x12;
+        cpu.get_memory()[0x1239] = 0xAB;
+        cpu.tick(); // fetch and decode
+        cpu.tick(); // FetchZeroPage
+        cpu.tick(); // FetchPointerWithYLowByte
+        cpu.tick(); // FetchPointerWithYHighByte
+        cpu.tick(); // LoadImmediate
+        assert_eq!(cpu.get_accumulator(), 0xAB);
+        assert_eq!(cpu.is_page_crossed(), false);
+    }
+
+    #[test]
+    fn test_lda_indirect_indexed_pagecross() {
+        let mut cpu = Cpu::new();
+        let mem: [u8; 3] = [0xB1, 0x50, 0x00];
+        cpu.load_program(&mem);
+        cpu.reset();
+        cpu.set_index_y(1u8);
+        cpu.get_memory()[0x50] = 0xFF;
+        cpu.get_memory()[0x51] = 0x12;
+        cpu.get_memory()[0x1300] = 0xAB;
+        cpu.tick(); // fetch and decode
+        cpu.tick(); // FetchZeroPage
+        cpu.tick(); // FetchPointerWithYLowByte
+        cpu.tick(); // FetchPointerWithYHighByte
+        cpu.tick(); // DummyCycle
+        cpu.tick(); // LoadImmediate
+        assert_eq!(cpu.get_accumulator(), 0xAB);
+        assert_eq!(cpu.is_page_crossed(), true);
     }
 
     // TAX tests

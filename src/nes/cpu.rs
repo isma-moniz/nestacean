@@ -251,14 +251,14 @@ impl Cpu {
                 self.pc += 1;
                 let new_addr = self.temp_addr.wrapping_add(self.index_x as u16);
                 self.page_crossed = (self.temp_addr & 0xFF00) != (new_addr & 0xFF00);
-                self.push_micro_from_placeholder(self.temp_addr);
+                self.push_micro_from_placeholder(new_addr);
             }
             MicroOp::FetchHighAddrByteWithY => {
                 self.temp_addr |= (self.mem_read(self.pc) as u16) << 8;
                 self.pc += 1;
                 let new_addr = self.temp_addr.wrapping_add(self.index_y as u16);
                 self.page_crossed = (self.temp_addr & 0xFF00) != (new_addr & 0xFF00);
-                self.push_micro_from_placeholder(self.temp_addr);
+                self.push_micro_from_placeholder(new_addr);
             }
             MicroOp::FetchPointerLowByte(pointer) => {
                 self.temp_addr = self.mem_read(pointer as u16) as u16;
@@ -269,8 +269,9 @@ impl Cpu {
             }
             MicroOp::FetchPointerHighByteWithY(pointer) => {
                 self.temp_addr |= (self.mem_read((pointer as u16).wrapping_add(1)) as u16) << 8;
-                self.temp_addr = self.temp_addr.wrapping_add(self.index_y as u16);
-                self.push_micro_from_placeholder(self.temp_addr);
+                let new_addr = self.temp_addr.wrapping_add(self.index_y as u16);
+                self.page_crossed = (self.temp_addr & 0xFF00) != (new_addr & 0xFF00);
+                self.push_micro_from_placeholder(new_addr);
             }
             MicroOp::LoadAccumulatorImmediate => {
                 let value = self.memory[self.pc as usize];
@@ -396,6 +397,10 @@ impl Cpu {
     }
 
     pub fn set_index_x(&mut self, val: u8) {
-        self.index_x = val;
+        self.index_x = val
+    }
+
+    pub fn set_index_y(&mut self, val: u8) {
+        self.index_y = val
     }
 }
