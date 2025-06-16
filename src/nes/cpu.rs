@@ -13,6 +13,8 @@ pub enum MicroOp {
     FetchHighAddrByteWithY,
     AddXtoAddressPlaceholder,
     AddXtoAddress(u16),
+    AddXtoZeroPageAddressPlaceholder,
+    AddXtoZeroPageAddress(u8),
     AddXLoadImmediatePlaceholder,
     AddXLoadImmediate(u16),
     AddYLoadImmediatePlaceholder,
@@ -192,6 +194,16 @@ impl Cpu {
                     MicroOp::WriteToAddressPlaceholder,
                 ])
             }
+            0xF6 => {
+                // INC zero page + x
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::AddXtoZeroPageAddressPlaceholder,
+                    MicroOp::ReadAddressPlaceholder,
+                    MicroOp::WriteBackAndIncrementPlaceholder,
+                    MicroOp::WriteToAddressPlaceholder,
+                ])
+            }
             0xE8 => {
                 // INX
                 VecDeque::from(vec![MicroOp::IncrementX])
@@ -232,6 +244,9 @@ impl Cpu {
             Some(MicroOp::AddXtoAddressPlaceholder) => {
                 self.current_inst.push_front(MicroOp::AddXtoAddress(value));
             }
+            Some(MicroOp::AddXtoZeroPageAddressPlaceholder) => {
+                self.current_inst.push_front(MicroOp::AddXtoZeroPageAddress(value as u8));
+            }
             Some(MicroOp::AddXtoPointerPlaceholder) => {
                 self.current_inst
                     .push_front(MicroOp::AddXtoPointer(value as u8));
@@ -269,6 +284,10 @@ impl Cpu {
             MicroOp::AddXtoAddress(address) => {
                 let new_address = address.wrapping_add(self.index_x as u16);
                 self.push_micro_from_placeholder(new_address);
+            }
+            MicroOp::AddXtoZeroPageAddress(address) => {
+                self.temp_addr = address.wrapping_add(self.index_x as u8) as u16;
+                self.push_micro_from_placeholder(self.temp_addr);
             }
             MicroOp::AddXtoPointer(pointer) => {
                 let new_pointer: u8 = pointer.wrapping_add(self.index_x);

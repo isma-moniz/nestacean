@@ -311,6 +311,40 @@ mod test {
         assert_eq!(cpu.get_memory()[0x50], 0x11);
     }
 
+    #[test]
+    fn test_inc_zeropage_x() {
+        let mut cpu = Cpu::new();
+        let mem: [u8; 3] = [0xF6, 0x50, 0x00];
+        cpu.load_program(&mem);
+        cpu.reset();
+        cpu.set_index_x(2);
+        cpu.get_memory()[0x52] = 0x10;
+        cpu.tick(); // fetch and decode
+        cpu.tick(); // FetchZeroPage
+        cpu.tick(); // AddXtoZeroPageAddress
+        cpu.tick(); // ReadAddress
+        cpu.tick(); // WriteBackAndIncrement
+        cpu.tick(); // WriteToAddress
+        assert_eq!(cpu.get_memory()[0x52], 0x11);
+    }
+
+    #[test]
+    fn test_inc_zeropage_x_no_overflow() {
+        let mut cpu = Cpu::new();
+        let mem: [u8; 3] = [0xF6, 0xFF, 0x00];
+        cpu.load_program(&mem);
+        cpu.reset();
+        cpu.set_index_x(2);
+        cpu.get_memory()[0x01] = 0x10;
+        cpu.tick(); // fetch and decode
+        cpu.tick(); // FetchZeroPage
+        cpu.tick(); // AddXtoZeroPageAddress
+        cpu.tick(); // ReadAddress
+        cpu.tick(); // WriteBackAndIncrement
+        cpu.tick(); // WriteToAddress
+        assert_eq!(cpu.get_memory()[0x01], 0x11);
+    }
+
     // general testing
     #[test]
     fn test_5_ops() {
