@@ -43,7 +43,7 @@ pub enum MicroOp {
     WriteBackAndDecrementPlaceholder,
     WriteBackAndDecrement(u8),
     WriteToAddressPlaceholder,
-    WriteToAddress(u8)
+    WriteToAddress(u8),
 }
 
 pub struct Cpu {
@@ -57,6 +57,7 @@ pub struct Cpu {
     memory: [u8; 0xFFFF],
     temp_addr: u16,
     page_crossed: bool,
+    debug_active: bool,
 }
 
 impl Cpu {
@@ -72,6 +73,7 @@ impl Cpu {
             memory: [0u8; 0xFFFF],
             temp_addr: 0u16,
             page_crossed: false,
+            debug_active: false,
         }
     }
 
@@ -83,6 +85,10 @@ impl Cpu {
         let low_byte = self.mem_read(pos) as u16;
         let high_byte = self.mem_read(pos + 1) as u16;
         (high_byte << 8) | low_byte
+    }
+
+    pub fn enable_debug(&mut self) {
+        self.debug_active = true;
     }
 
     fn mem_write(&mut self, pos: u16, byte: u8) {
@@ -118,7 +124,6 @@ impl Cpu {
         self.index_x = 0;
         self.index_y = 0;
         self.sp = 0;
-        self.sp = 0;
         self.status_p = 0;
         self.temp_addr = 0;
         self.page_crossed = false;
@@ -132,6 +137,14 @@ impl Cpu {
     }
 
     pub fn tick(&mut self) {
+        if self.debug_active {
+            self.print_debug_info();
+            let _ = std::io::stdin().read_line(&mut String::new());
+        }
+        self.execute_current_cycle();
+    }
+
+    fn execute_current_cycle(&mut self) {
         if self.current_inst.is_empty() {
             let opcode = self.memory[self.pc as usize];
             self.pc += 1;
@@ -139,6 +152,27 @@ impl Cpu {
         } else if let Some(op) = self.current_inst.pop_front() {
             self.execute_micro_op(op);
         }
+    }
+
+    fn print_debug_info(&self) {
+        print!("{esc}[2J{esc}[1;1H", esc = 27 as char);
+        println!("PC: {:04X} | SP: {:02X}", self.pc, self.sp);
+        println!(
+            "X: {:02X} | Y: {:02X} | A: {:02X}",
+            self.index_x, self.index_y, self.accumulator
+        );
+        println!("P: {:b}", self.status_p);
+        println!(
+            "temp_addr: {:04X} val: {:02X}",
+            self.temp_addr,
+            self.mem_read(self.temp_addr)
+        );
+
+        println!("ZeroPage memory: ");
+        for i in 0..=0xFF {
+            print!("{:02X} ", self.memory[i]);
+        }
+        println!("");
     }
 
     fn decode_opcode(&mut self, opcode: u8) -> VecDeque<MicroOp> {
@@ -318,8 +352,7 @@ impl Cpu {
                     .push_front(MicroOp::WriteToAddress(value as u8));
             }
             Some(MicroOp::ReadAddressPlaceholder) => {
-                self.current_inst
-                    .push_front(MicroOp::ReadAddress(value));
+                self.current_inst.push_front(MicroOp::ReadAddress(value));
             }
             Some(MicroOp::WriteBackAndIncrementPlaceholder) => {
                 self.current_inst
@@ -340,7 +373,8 @@ impl Cpu {
                 self.current_inst.push_front(MicroOp::AddXtoAddress(value));
             }
             Some(MicroOp::AddXtoZeroPageAddressPlaceholder) => {
-                self.current_inst.push_front(MicroOp::AddXtoZeroPageAddress(value as u8));
+                self.current_inst
+                    .push_front(MicroOp::AddXtoZeroPageAddress(value as u8));
             }
             Some(MicroOp::AddXtoPointerPlaceholder) => {
                 self.current_inst

@@ -9,13 +9,21 @@ pub struct NES {
 
 impl NES {
     pub fn new() -> Self {
-        Self {
-            clock: 0,
-            cpu: Cpu::new(),
-        }
+        let mut cpu = Cpu::new();
+        let mem: [u8; 3] = [0xA5, 0x00, 0x00];
+        cpu.load_program(&mem);
+        cpu.reset();
+        cpu.get_memory()[0] = 0x05;
+
+        Self { clock: 0, cpu }
     }
 
     pub fn tick(&mut self) {
         self.clock += 1;
+        self.cpu.tick();
+    }
+
+    pub fn enable_cpu_debug(&mut self) {
+        self.cpu.enable_debug();
     }
 }
