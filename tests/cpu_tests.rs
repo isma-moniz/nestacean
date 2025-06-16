@@ -253,7 +253,7 @@ mod test {
         assert_eq!(cpu.get_status_p() & 0b1000_0000, 0b1000_0000);
     }
 
-    // INX tests
+    // INX/INY/DEX/DEY tests
     #[test]
     fn test_inx() {
         let mut cpu = Cpu::new();
@@ -294,6 +294,30 @@ mod test {
         assert_eq!(cpu.get_index_x(), 0x80);
         assert_eq!(cpu.get_status_p() & 0b0000_0010, 0);
         assert_eq!(cpu.get_status_p() & 0b1000_0000, 0b1000_0000);
+    }
+
+    #[test]
+    fn test_dex() {
+        let mut cpu = Cpu::new();
+        let mem: [u8; 3] = [0xCA, 0xFF, 0xFF];
+        cpu.load_program(&mem);
+        cpu.reset();
+        cpu.set_index_x(0x01);
+        cpu.tick();
+        cpu.tick();
+        assert_eq!(cpu.get_index_x(), 0x00);
+    }
+
+    #[test]
+    fn test_dey() {
+        let mut cpu = Cpu::new();
+        let mem: [u8; 3] = [0x88, 0xFF, 0xFF];
+        cpu.load_program(&mem);
+        cpu.reset();
+        cpu.set_index_y(0x01);
+        cpu.tick();
+        cpu.tick();
+        assert_eq!(cpu.get_index_y(), 0x00);
     }
     
     // INC tests
@@ -347,7 +371,7 @@ mod test {
     }
 
     #[test]
-    fn test_inc_absolute() { //TODO: fix
+    fn test_inc_absolute() {
         let mut cpu = Cpu::new();
         let mem: [u8; 3] = [0xEE, 0xFF, 0x10];
         cpu.load_program(&mem);
@@ -378,6 +402,73 @@ mod test {
         cpu.tick(); // WriteBackAndIncrement
         cpu.tick(); // WriteToAddress
         assert_eq!(cpu.get_memory()[0x1100], 0x11);
+    }
+
+    // DEC tests
+    #[test]
+    fn test_dec_zeropage() {
+        let mut cpu = Cpu::new();
+        let mem: [u8; 3] = [0xC6, 0x50, 0x00];
+        cpu.load_program(&mem);
+        cpu.reset();
+        cpu.get_memory()[0x50] = 0x0A;
+        cpu.tick(); // fetch and decode
+        cpu.tick(); // FetchZeroPage
+        cpu.tick(); // ReadAddress
+        cpu.tick(); // WriteBackAndDecrement
+        cpu.tick(); // WriteToAddress
+        assert_eq!(cpu.get_memory()[0x50], 0x09);
+    }
+
+    #[test]
+    fn test_dec_zeropage_x() {
+        let mut cpu = Cpu::new();
+        let mem: [u8; 3] = [0xD6, 0x50, 0x00];
+        cpu.load_program(&mem);
+        cpu.reset();
+        cpu.set_index_x(2);
+        cpu.get_memory()[0x52] = 0x0A;
+        cpu.tick(); // fetch and decode
+        cpu.tick(); // FetchZeroPage
+        cpu.tick(); // AddXtoZeroPageAddress
+        cpu.tick(); // ReadAddress
+        cpu.tick(); // WriteBackAndDecrement
+        cpu.tick(); // WriteToAddress
+        assert_eq!(cpu.get_memory()[0x52], 0x09);
+    }
+
+    #[test]
+    fn test_dec_absolute() {
+        let mut cpu = Cpu::new();
+        let mem: [u8; 3] = [0xCE, 0xFF, 0x10];
+        cpu.load_program(&mem);
+        cpu.reset();
+        cpu.get_memory()[0x10FF] = 0x0A;
+        cpu.tick(); // fetch and decode
+        cpu.tick(); // FetchLowAddrByte
+        cpu.tick(); // FetchHighAddrByte
+        cpu.tick(); // ReadAddress
+        cpu.tick(); // WriteBackAndDecrement
+        cpu.tick(); // WriteToAddress
+        assert_eq!(cpu.get_memory()[0x10FF], 0x09);
+    }
+
+    #[test]
+    fn test_dec_absolute_x() {
+        let mut cpu = Cpu::new();
+        let mem: [u8; 3] = [0xDE, 0xFF, 0x10];
+        cpu.load_program(&mem);
+        cpu.reset();
+        cpu.get_memory()[0x1100] = 0x0A;
+        cpu.set_index_x(1);
+        cpu.tick(); // fetch and decode
+        cpu.tick(); // FetchLowAddrByte
+        cpu.tick(); // FetchHighAddrByteWithX
+        cpu.tick(); // DummyCycle
+        cpu.tick(); // ReadAddress
+        cpu.tick(); // WriteBackAndDecrement
+        cpu.tick(); // WriteToAddress
+        assert_eq!(cpu.get_memory()[0x1100], 0x09);
     }
 
     // general testing

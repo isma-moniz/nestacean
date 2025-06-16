@@ -23,6 +23,8 @@ pub enum MicroOp {
     LoadXAccumulator,
     IncrementX,
     IncrementY,
+    DecrementX,
+    DecrementY,
     DummyCycle,
     FixAddressPlaceholder, // just a dummy cycle but with passthrough of the provided value
     FixAddress(u16),
@@ -38,6 +40,8 @@ pub enum MicroOp {
     ReadAddress(u16),
     WriteBackAndIncrementPlaceholder,
     WriteBackAndIncrement(u8),
+    WriteBackAndDecrementPlaceholder,
+    WriteBackAndDecrement(u8),
     WriteToAddressPlaceholder,
     WriteToAddress(u8)
 }
@@ -90,6 +94,22 @@ impl Cpu {
         let high_byte = (byte >> 8) as u8;
         self.mem_write(pos, low_byte);
         self.mem_write(pos + 1, high_byte);
+    }
+
+    fn set_flags_zero_neg(&mut self, value: u8) {
+        // set zero flag
+        if value == 0x00 {
+            self.status_p = self.status_p | 0b0000_0010;
+        } else {
+            self.status_p = self.status_p & 0b1111_1101;
+        }
+
+        // set negative flag
+        if value & 0b1000_0000 != 0 {
+            self.status_p = self.status_p | 0b1000_0000;
+        } else {
+            self.status_p = self.status_p & 0b0111_1111;
+        }
     }
 
     //TODO: might be redundant to have this and the self initializer. see load_program
@@ -231,9 +251,57 @@ impl Cpu {
                 // INX
                 VecDeque::from(vec![MicroOp::IncrementX])
             }
+            0xCA => {
+                // DEX
+                VecDeque::from(vec![MicroOp::DecrementX])
+            }
             0xC8 => {
                 // INY
                 VecDeque::from(vec![MicroOp::IncrementY])
+            }
+            0x88 => {
+                // DEY
+                VecDeque::from(vec![MicroOp::DecrementY])
+            }
+            0xC6 => {
+                // DEC zero page
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::ReadAddressPlaceholder,
+                    MicroOp::WriteBackAndDecrementPlaceholder,
+                    MicroOp::WriteToAddressPlaceholder,
+                ])
+            }
+            0xD6 => {
+                // DEC zero page + x
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::AddXtoZeroPageAddressPlaceholder,
+                    MicroOp::ReadAddressPlaceholder,
+                    MicroOp::WriteBackAndDecrementPlaceholder,
+                    MicroOp::WriteToAddressPlaceholder,
+                ])
+            }
+            0xCE => {
+                // DEC absolute
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByte,
+                    MicroOp::ReadAddressPlaceholder,
+                    MicroOp::WriteBackAndDecrementPlaceholder,
+                    MicroOp::WriteToAddressPlaceholder,
+                ])
+            }
+            0xDE => {
+                // DEC absolute + x
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByteWithX,
+                    MicroOp::FixAddressPlaceholder, // always happens with this instruction
+                    MicroOp::ReadAddressPlaceholder,
+                    MicroOp::WriteBackAndDecrementPlaceholder,
+                    MicroOp::WriteToAddressPlaceholder,
+                ])
             }
             0x00 => {
                 // BRK
@@ -256,6 +324,10 @@ impl Cpu {
             Some(MicroOp::WriteBackAndIncrementPlaceholder) => {
                 self.current_inst
                     .push_front(MicroOp::WriteBackAndIncrement(value as u8));
+            }
+            Some(MicroOp::WriteBackAndDecrementPlaceholder) => {
+                self.current_inst
+                    .push_front(MicroOp::WriteBackAndDecrement(value as u8));
             }
             Some(MicroOp::LoadAccumulatorImmediate) => {
                 self.current_inst
@@ -362,92 +434,54 @@ impl Cpu {
                 self.pc += 1;
                 self.accumulator = value;
 
-                //set zero flag
-                if self.accumulator == 0x00 {
-                    self.status_p = self.status_p | 0b0000_0010;
-                } else {
-                    self.status_p = self.status_p & 0b1111_1101;
-                }
-                // set negative flag
-                if self.accumulator & 0b1000_0000 != 0 {
-                    self.status_p = self.status_p | 0b1000_0000;
-                } else {
-                    self.status_p = self.status_p & 0b0111_1111;
-                }
+                self.set_flags_zero_neg(value);
             }
             MicroOp::LoadAccumulatorFromAddress(address) => {
                 let value = self.memory[address as usize];
                 self.accumulator = value;
 
-                //set zero flag
-                if self.accumulator == 0x00 {
-                    self.status_p = self.status_p | 0b0000_0010;
-                } else {
-                    self.status_p = self.status_p & 0b1111_1101;
-                }
-                // set negative flag
-                if self.accumulator & 0b1000_0000 != 0 {
-                    self.status_p = self.status_p | 0b1000_0000;
-                } else {
-                    self.status_p = self.status_p & 0b0111_1111;
-                }
+                self.set_flags_zero_neg(value);
             }
             MicroOp::LoadXAccumulator => {
                 let value = self.accumulator;
                 self.index_x = value;
 
-                // set zero flag
-                if self.index_x == 0x00 {
-                    self.status_p = self.status_p | 0b0000_0010;
-                } else {
-                    self.status_p = self.status_p & 0b1111_1101;
-                }
-                // set negative flag
-                if self.index_x & 0b1000_0000 != 0 {
-                    self.status_p = self.status_p | 0b1000_0000;
-                } else {
-                    self.status_p = self.status_p & 0b0111_1111;
-                }
+                self.set_flags_zero_neg(value);
             }
             MicroOp::IncrementX => {
                 self.index_x = self.index_x.wrapping_add(1);
 
-                // set zero flag
-                if self.index_x == 0x00 {
-                    self.status_p = self.status_p | 0b0000_0010;
-                } else {
-                    self.status_p = self.status_p & 0b1111_1101;
-                }
-                // set negative flag
-                if self.index_x & 0b1000_0000 != 0 {
-                    self.status_p = self.status_p | 0b1000_0000;
-                } else {
-                    self.status_p = self.status_p & 0b0111_1111;
-                }
+                self.set_flags_zero_neg(self.index_x);
+            }
+            MicroOp::DecrementX => {
+                self.index_x = self.index_x.wrapping_sub(1);
+
+                self.set_flags_zero_neg(self.index_x);
             }
             MicroOp::IncrementY => {
                 self.index_y = self.index_y.wrapping_add(1);
 
-                // set zero flag
-                if self.index_y == 0x00 {
-                    self.status_p = self.status_p | 0b0000_0010;
-                } else {
-                    self.status_p = self.status_p & 0b1111_1101;
-                }
-                // set negative flag
-                if self.index_y & 0b1000_0000 != 0 {
-                    self.status_p = self.status_p | 0b1000_0000;
-                } else {
-                    self.status_p = self.status_p & 0b0111_1111;
-                }
+                self.set_flags_zero_neg(self.index_y);
+            }
+            MicroOp::DecrementY => {
+                self.index_y = self.index_y.wrapping_sub(1);
+
+                self.set_flags_zero_neg(self.index_y);
             }
             MicroOp::WriteBackAndIncrement(value) => {
                 self.mem_write(self.temp_addr, value);
                 let updated_value = value.wrapping_add(1);
                 self.push_micro_from_placeholder(updated_value as u16);
             }
+            MicroOp::WriteBackAndDecrement(value) => {
+                self.mem_write(self.temp_addr, value);
+                let updated_value = value.wrapping_sub(1);
+                self.push_micro_from_placeholder(updated_value as u16);
+            }
             MicroOp::WriteToAddress(value) => {
                 self.mem_write(self.temp_addr, value);
+
+                self.set_flags_zero_neg(value);
             }
             MicroOp::Break => {
                 //TODO: this op is more complex. research and implement.
