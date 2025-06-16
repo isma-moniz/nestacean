@@ -295,7 +295,8 @@ mod test {
         assert_eq!(cpu.get_status_p() & 0b0000_0010, 0);
         assert_eq!(cpu.get_status_p() & 0b1000_0000, 0b1000_0000);
     }
-
+    
+    // INC tests
     #[test]
     fn test_inc_zeropage() {
         let mut cpu = Cpu::new();
@@ -343,6 +344,40 @@ mod test {
         cpu.tick(); // WriteBackAndIncrement
         cpu.tick(); // WriteToAddress
         assert_eq!(cpu.get_memory()[0x01], 0x11);
+    }
+
+    #[test]
+    fn test_inc_absolute() { //TODO: fix
+        let mut cpu = Cpu::new();
+        let mem: [u8; 3] = [0xEE, 0xFF, 0x10];
+        cpu.load_program(&mem);
+        cpu.reset();
+        cpu.get_memory()[0x10FF] = 0x10;
+        cpu.tick(); // fetch and decode
+        cpu.tick(); // FetchLowAddrByte
+        cpu.tick(); // FetchHighAddrByte
+        cpu.tick(); // ReadAddress
+        cpu.tick(); // WriteBackAndIncrement
+        cpu.tick(); // WriteToAddress
+        assert_eq!(cpu.get_memory()[0x10FF], 0x11);
+    }
+
+    #[test]
+    fn test_inc_absolute_x() {
+        let mut cpu = Cpu::new();
+        let mem: [u8; 3] = [0xFE, 0xFF, 0x10];
+        cpu.load_program(&mem);
+        cpu.reset();
+        cpu.get_memory()[0x1100] = 0x10;
+        cpu.set_index_x(1);
+        cpu.tick(); // fetch and decode
+        cpu.tick(); // FetchLowAddrByte
+        cpu.tick(); // FetchHighAddrByteWithX
+        cpu.tick(); // DummyCycle
+        cpu.tick(); // ReadAddress
+        cpu.tick(); // WriteBackAndIncrement
+        cpu.tick(); // WriteToAddress
+        assert_eq!(cpu.get_memory()[0x1100], 0x11);
     }
 
     // general testing

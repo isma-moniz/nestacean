@@ -24,6 +24,8 @@ pub enum MicroOp {
     IncrementX,
     IncrementY,
     DummyCycle,
+    FixAddressPlaceholder, // just a dummy cycle but with passthrough of the provided value
+    FixAddress(u16),
     FetchPointer,
     AddXtoPointerPlaceholder,
     AddXtoPointer(u8),
@@ -204,6 +206,27 @@ impl Cpu {
                     MicroOp::WriteToAddressPlaceholder,
                 ])
             }
+            0xEE => {
+                // INC absolute
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByte,
+                    MicroOp::ReadAddressPlaceholder,
+                    MicroOp::WriteBackAndIncrementPlaceholder,
+                    MicroOp::WriteToAddressPlaceholder,
+                ])
+            }
+            0xFE => {
+                // INC absolute + x
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByteWithX,
+                    MicroOp::FixAddressPlaceholder, // always happens with this instruction
+                    MicroOp::ReadAddressPlaceholder,
+                    MicroOp::WriteBackAndIncrementPlaceholder,
+                    MicroOp::WriteToAddressPlaceholder,
+                ])
+            }
             0xE8 => {
                 // INX
                 VecDeque::from(vec![MicroOp::IncrementX])
@@ -263,6 +286,9 @@ impl Cpu {
                 self.current_inst
                     .push_front(MicroOp::FetchPointerLowByte(value as u8));
             }
+            Some(MicroOp::FixAddressPlaceholder) => {
+                self.current_inst.push_front(MicroOp::FixAddress(value));
+            }
             Some(other) => panic!("Unexpected micro-op: {:?}", other),
             None => panic!("No micro-op!"),
         }
@@ -271,7 +297,7 @@ impl Cpu {
     fn execute_micro_op(&mut self, operation: MicroOp) {
         match operation {
             MicroOp::ReadAddress(address) => {
-                let value = self.mem_read(address & 0xFF);
+                let value = self.mem_read(address);
 
                 self.push_micro_from_placeholder(value as u16);
             }
@@ -307,14 +333,16 @@ impl Cpu {
                 self.pc += 1;
                 let new_addr = self.temp_addr.wrapping_add(self.index_x as u16);
                 self.page_crossed = (self.temp_addr & 0xFF00) != (new_addr & 0xFF00);
-                self.push_micro_from_placeholder(new_addr);
+                self.temp_addr = new_addr;
+                self.push_micro_from_placeholder(self.temp_addr);
             }
             MicroOp::FetchHighAddrByteWithY => {
                 self.temp_addr |= (self.mem_read(self.pc) as u16) << 8;
                 self.pc += 1;
                 let new_addr = self.temp_addr.wrapping_add(self.index_y as u16);
                 self.page_crossed = (self.temp_addr & 0xFF00) != (new_addr & 0xFF00);
-                self.push_micro_from_placeholder(new_addr);
+                self.temp_addr = new_addr;
+                self.push_micro_from_placeholder(self.temp_addr);
             }
             MicroOp::FetchPointerLowByte(pointer) => {
                 self.temp_addr = self.mem_read(pointer as u16) as u16;
@@ -427,6 +455,9 @@ impl Cpu {
             }
             MicroOp::DummyCycle => {
                 return;
+            }
+            MicroOp::FixAddress(passthrough) => {
+                self.push_micro_from_placeholder(passthrough);
             }
             _ => unimplemented!(),
         }
