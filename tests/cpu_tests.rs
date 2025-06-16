@@ -296,6 +296,21 @@ mod test {
         assert_eq!(cpu.get_status_p() & 0b1000_0000, 0b1000_0000);
     }
 
+    #[test]
+    fn test_inc_zeropage() {
+        let mut cpu = Cpu::new();
+        let mem: [u8; 3] = [0xE6, 0x50, 0x00];
+        cpu.load_program(&mem);
+        cpu.reset();
+        cpu.get_memory()[0x50] = 0x10;
+        cpu.tick(); // fetch and decode
+        cpu.tick(); // FetchZeroPage
+        cpu.tick(); // ReadAddress
+        cpu.tick(); // WriteBackAndIncrement
+        cpu.tick(); // WriteToAddress
+        assert_eq!(cpu.get_memory()[0x50], 0x11);
+    }
+
     // general testing
     #[test]
     fn test_5_ops() {

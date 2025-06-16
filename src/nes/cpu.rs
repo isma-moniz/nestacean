@@ -20,6 +20,7 @@ pub enum MicroOp {
     FetchZeroPage,
     LoadXAccumulator,
     IncrementX,
+    IncrementY,
     DummyCycle,
     FetchPointer,
     AddXtoPointerPlaceholder,
@@ -29,6 +30,12 @@ pub enum MicroOp {
     FetchPointerLowByte(u8),
     FetchPointerHighByte(u8),
     FetchPointerHighByteWithY(u8),
+    ReadAddressPlaceholder,
+    ReadAddress(u16),
+    WriteBackAndIncrementPlaceholder,
+    WriteBackAndIncrement(u8),
+    WriteToAddressPlaceholder,
+    WriteToAddress(u8)
 }
 
 pub struct Cpu {
@@ -176,9 +183,22 @@ impl Cpu {
                 // TAX
                 VecDeque::from(vec![MicroOp::LoadXAccumulator])
             }
+            0xE6 => {
+                // INC zero page
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::ReadAddressPlaceholder,
+                    MicroOp::WriteBackAndIncrementPlaceholder,
+                    MicroOp::WriteToAddressPlaceholder,
+                ])
+            }
             0xE8 => {
                 // INX
                 VecDeque::from(vec![MicroOp::IncrementX])
+            }
+            0xC8 => {
+                // INY
+                VecDeque::from(vec![MicroOp::IncrementY])
             }
             0x00 => {
                 // BRK
@@ -190,6 +210,18 @@ impl Cpu {
 
     fn push_micro_from_placeholder(&mut self, value: u16) {
         match self.current_inst.pop_front() {
+            Some(MicroOp::WriteToAddressPlaceholder) => {
+                self.current_inst
+                    .push_front(MicroOp::WriteToAddress(value as u8));
+            }
+            Some(MicroOp::ReadAddressPlaceholder) => {
+                self.current_inst
+                    .push_front(MicroOp::ReadAddress(value));
+            }
+            Some(MicroOp::WriteBackAndIncrementPlaceholder) => {
+                self.current_inst
+                    .push_front(MicroOp::WriteBackAndIncrement(value as u8));
+            }
             Some(MicroOp::LoadAccumulatorImmediate) => {
                 self.current_inst
                     .push_front(MicroOp::LoadAccumulatorFromAddress(value));
@@ -223,11 +255,16 @@ impl Cpu {
 
     fn execute_micro_op(&mut self, operation: MicroOp) {
         match operation {
+            MicroOp::ReadAddress(address) => {
+                let value = self.mem_read(address & 0xFF);
+
+                self.push_micro_from_placeholder(value as u16);
+            }
             MicroOp::FetchZeroPage => {
-                let address = self.memory[self.pc as usize];
+                self.temp_addr = self.memory[self.pc as usize] as u16;
                 self.pc += 1;
 
-                self.push_micro_from_placeholder(address as u16);
+                self.push_micro_from_placeholder(self.temp_addr);
             }
             MicroOp::AddXtoAddress(address) => {
                 let new_address = address.wrapping_add(self.index_x as u16);
@@ -340,6 +377,30 @@ impl Cpu {
                 } else {
                     self.status_p = self.status_p & 0b0111_1111;
                 }
+            }
+            MicroOp::IncrementY => {
+                self.index_y = self.index_y.wrapping_add(1);
+
+                // set zero flag
+                if self.index_y == 0x00 {
+                    self.status_p = self.status_p | 0b0000_0010;
+                } else {
+                    self.status_p = self.status_p & 0b1111_1101;
+                }
+                // set negative flag
+                if self.index_y & 0b1000_0000 != 0 {
+                    self.status_p = self.status_p | 0b1000_0000;
+                } else {
+                    self.status_p = self.status_p & 0b0111_1111;
+                }
+            }
+            MicroOp::WriteBackAndIncrement(value) => {
+                self.mem_write(self.temp_addr, value);
+                let updated_value = value.wrapping_add(1);
+                self.push_micro_from_placeholder(updated_value as u16);
+            }
+            MicroOp::WriteToAddress(value) => {
+                self.mem_write(self.temp_addr, value);
             }
             MicroOp::Break => {
                 //TODO: this op is more complex. research and implement.
