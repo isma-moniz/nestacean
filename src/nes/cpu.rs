@@ -1,4 +1,7 @@
 use std::collections::VecDeque;
+use std::io::{self, Write};
+
+const CLS: &str = "\x1B[2J\x1B[1;1H";
 
 #[derive(Debug)]
 pub enum MicroOp {
@@ -58,6 +61,7 @@ pub struct Cpu {
     temp_addr: u16,
     page_crossed: bool,
     debug_active: bool,
+    debug_mem_page: u8,
 }
 
 impl Cpu {
@@ -74,6 +78,7 @@ impl Cpu {
             temp_addr: 0u16,
             page_crossed: false,
             debug_active: false,
+            debug_mem_page: 0u8,
         }
     }
 
@@ -138,8 +143,22 @@ impl Cpu {
 
     pub fn tick(&mut self) {
         if self.debug_active {
-            self.print_debug_info();
-            let _ = std::io::stdin().read_line(&mut String::new());
+            loop {
+                self.print_debug_info();
+                print!(
+                    "Enter command (n = next mempage, p = previous mempage, <Enter> = continue): "
+                );
+                io::stdout().flush().unwrap();
+                let mut input = String::new();
+                if let Ok(_) = io::stdin().read_line(&mut input) {
+                    match input.trim() {
+                        "n" => self.debug_mem_page = self.debug_mem_page.wrapping_add(1),
+                        "p" => self.debug_mem_page = self.debug_mem_page.wrapping_sub(1),
+                        "" => break,
+                        _ => continue,
+                    }
+                }
+            }
         }
         self.execute_current_cycle();
     }
@@ -155,7 +174,7 @@ impl Cpu {
     }
 
     fn print_debug_info(&self) {
-        print!("{esc}[2J{esc}[1;1H", esc = 27 as char);
+        print!("{}", CLS);
         println!("PC: {:04X} | SP: {:02X}", self.pc, self.sp);
         println!(
             "X: {:02X} | Y: {:02X} | A: {:02X}",
@@ -168,9 +187,12 @@ impl Cpu {
             self.mem_read(self.temp_addr)
         );
 
-        println!("ZeroPage memory: ");
+        println!("Memory page {:02X}:", self.debug_mem_page);
         for i in 0..=0xFF {
-            print!("{:02X} ", self.memory[i]);
+            print!(
+                "{:02X} ",
+                self.memory[(self.debug_mem_page << 2 | i) as usize]
+            );
         }
         println!("");
     }
