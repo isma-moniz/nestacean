@@ -1,2 +1,62 @@
 # NESTACEAN - a NES emulator in Rust
 
+This is a WIP. I had the brilliant idea to make a cicle accurate emulator :D so it will be taking a while.
+
+## Instruction Progress
+
+- [x] LDA
+- [x] INC 
+- [x] INY
+- [x] INX
+- [x] DEC
+- [x] DEY
+- [x] DEX
+- [ ] BRK
+- [ ] LDX
+- [ ] LDY
+- [ ] STA
+- [ ] STY
+- [ ] STX
+- [ ] TAX
+- [ ] TAY
+- [ ] TXA
+- [ ] TYA
+- [ ] TSX
+- [ ] TXS
+- [ ] PHA
+- [ ] PHP
+- [ ] PLA
+- [ ] PLP
+- [ ] AND
+- [ ] EOR 
+- [ ] ORA
+- [ ] BIT 
+- [ ] ADC
+- [ ] SBC
+- [ ] CMP
+- [ ] CPX
+- [ ] CPY
+- [ ] ASL
+- [ ] LSR
+- [ ] ROL
+- [ ] ROR
+- [ ] JMP
+- [ ] JSR
+- [ ] RTS
+- [ ] BCC
+- [ ] BCS
+- [ ] BEQ
+- [ ] BMI
+- [ ] BNE
+- [ ] BPL
+- [ ] BVC
+- [ ] BVS
+- [ ] CLC
+- [ ] CLD
+- [ ] CLI
+- [ ] CLV
+- [ ] SEC
+- [ ] SED
+- [ ] SEI
+- [ ] NOP
+- [ ] RTI
