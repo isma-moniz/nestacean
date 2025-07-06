@@ -57,7 +57,7 @@ pub struct Cpu {
     sp: u8,
     status_p: u8,
     current_inst: VecDeque<MicroOp>,
-    memory: [u8; 0xFFFF],
+    memory: Box<[u8; 0xFFFF]>,
     temp_addr: u16,
     page_crossed: bool,
     debug_active: bool,
@@ -74,7 +74,7 @@ impl Cpu {
             sp: 0u8,
             status_p: 0u8,
             current_inst: VecDeque::new(),
-            memory: [0u8; 0xFFFF],
+            memory: Box::new([0u8; 0xFFFF]),
             temp_addr: 0u16,
             page_crossed: false,
             debug_active: false,
@@ -96,11 +96,11 @@ impl Cpu {
         self.debug_active = true;
     }
 
-    fn mem_write(&mut self, pos: u16, byte: u8) {
+    pub fn mem_write(&mut self, pos: u16, byte: u8) {
         self.memory[pos as usize] = byte;
     }
 
-    fn mem_write_u16(&mut self, pos: u16, byte: u16) {
+    pub fn mem_write_u16(&mut self, pos: u16, byte: u16) {
         let low_byte = (byte & 0xFF) as u8;
         let high_byte = (byte >> 8) as u8;
         self.mem_write(pos, low_byte);
@@ -581,8 +581,8 @@ impl Cpu {
         &self.current_inst
     }
 
-    pub fn get_memory(&mut self) -> &mut [u8; 0xFFFF] {
-        &mut self.memory
+    pub fn get_memory(&self) -> &[u8; 0xFFFF] {
+        &self.memory
     }
 
     pub fn get_temp_addr(&self) -> u16 {

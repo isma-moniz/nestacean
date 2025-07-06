@@ -5,7 +5,7 @@ mod test {
     use super::*;
 
     // LDA tests
-    #[test] 
+    #[test]
     fn test_lda() {
         let mut cpu = Cpu::new();
         let mem: [u8; 3] = [0xA9, 0x05, 0xFF];
@@ -50,7 +50,7 @@ mod test {
         let mem: [u8; 3] = [0xA5, 0x00, 0x00];
         cpu.load_program(&mem);
         cpu.reset();
-        cpu.get_memory()[0] = 0x05;
+        cpu.mem_write(0, 0x05);
         cpu.tick(); // fetch and decode
         cpu.tick(); // FetchZeroPage
         cpu.tick(); // LoadAccumulatorImmediate
@@ -64,7 +64,7 @@ mod test {
         cpu.load_program(&mem);
         cpu.reset();
         cpu.set_index_x(0x04);
-        cpu.get_memory()[0x14] = 0x99;
+        cpu.mem_write(0x14, 0x99);
         cpu.tick(); // fetch and decode
         cpu.tick(); // FetchZeroPage
         cpu.tick(); // AddXtoAddressPlaceholder
@@ -78,7 +78,7 @@ mod test {
         let mem: [u8; 3] = [0xAD, 0x00, 0x30]; // LDA $3000
         cpu.load_program(&mem);
         cpu.reset();
-        cpu.get_memory()[0x3000] = 0x55;
+        cpu.mem_write(0x3000, 0x55);
         cpu.tick(); // fetch and decode
         cpu.tick(); // FetchLowAddrByte
         cpu.tick(); // FetchHighAddrByte
@@ -93,7 +93,7 @@ mod test {
         cpu.load_program(&mem);
         cpu.reset();
         cpu.set_index_x(2u8);
-        cpu.get_memory()[0x3002] = 0x55;
+        cpu.mem_write(0x3002, 0x55);
         cpu.tick(); // fetch and decode
         cpu.tick(); // FetchLowAddrByte
         cpu.tick(); // FetchHighAddrByteWithX
@@ -109,7 +109,7 @@ mod test {
         cpu.load_program(&mem);
         cpu.reset();
         cpu.set_index_x(1u8);
-        cpu.get_memory()[0x3100] = 0x55;
+        cpu.mem_write(0x3100, 0x55);
         cpu.tick(); // fetch and decode
         cpu.tick(); // FetchLowAddrByte
         cpu.tick(); // FetchHighAddrByteWithX
@@ -126,7 +126,7 @@ mod test {
         cpu.load_program(&mem);
         cpu.reset();
         cpu.set_index_y(2u8);
-        cpu.get_memory()[0x3002] = 0x55;
+        cpu.mem_write(0x3002, 0x55);
         cpu.tick(); // fetch and decode
         cpu.tick(); // FetchLowAddrByte
         cpu.tick(); // FetchHighAddrByteWithX
@@ -142,7 +142,7 @@ mod test {
         cpu.load_program(&mem);
         cpu.reset();
         cpu.set_index_y(1u8);
-        cpu.get_memory()[0x3100] = 0x55;
+        cpu.mem_write(0x3100, 0x55);
         cpu.tick(); // fetch and decode
         cpu.tick(); // FetchLowAddrByte
         cpu.tick(); // FetchHighAddrByteWithX
@@ -159,9 +159,8 @@ mod test {
         cpu.load_program(&mem);
         cpu.reset();
         cpu.set_index_x(2u8);
-        cpu.get_memory()[0x0052] = 0x23;
-        cpu.get_memory()[0x0053] = 0x65;
-        cpu.get_memory()[0x6523] = 0x69;
+        cpu.mem_write_u16(0x0052, 0x6523);
+        cpu.mem_write(0x6523, 0x69);
         cpu.tick(); // fetch and decode
         cpu.tick(); // FetchZeroPage
         cpu.tick(); // AddXtoPointer
@@ -178,9 +177,8 @@ mod test {
         cpu.load_program(&mem);
         cpu.reset();
         cpu.set_index_y(5u8);
-        cpu.get_memory()[0x50] = 0x34;
-        cpu.get_memory()[0x51] = 0x12;
-        cpu.get_memory()[0x1239] = 0xAB;
+        cpu.mem_write_u16(0x50, 0x1234);
+        cpu.mem_write(0x1239, 0xAB);
         cpu.tick(); // fetch and decode
         cpu.tick(); // FetchZeroPage
         cpu.tick(); // FetchPointerWithYLowByte
@@ -197,9 +195,8 @@ mod test {
         cpu.load_program(&mem);
         cpu.reset();
         cpu.set_index_y(1u8);
-        cpu.get_memory()[0x50] = 0xFF;
-        cpu.get_memory()[0x51] = 0x12;
-        cpu.get_memory()[0x1300] = 0xAB;
+        cpu.mem_write_u16(0x50, 0x12FF);
+        cpu.mem_write(0x1300, 0xAB);
         cpu.tick(); // fetch and decode
         cpu.tick(); // FetchZeroPage
         cpu.tick(); // FetchPointerWithYLowByte
@@ -319,7 +316,7 @@ mod test {
         cpu.tick();
         assert_eq!(cpu.get_index_y(), 0x00);
     }
-    
+
     // INC tests
     #[test]
     fn test_inc_zeropage() {
@@ -327,7 +324,7 @@ mod test {
         let mem: [u8; 3] = [0xE6, 0x50, 0x00];
         cpu.load_program(&mem);
         cpu.reset();
-        cpu.get_memory()[0x50] = 0x10;
+        cpu.mem_write(0x50, 0x10);
         cpu.tick(); // fetch and decode
         cpu.tick(); // FetchZeroPage
         cpu.tick(); // ReadAddress
@@ -343,7 +340,7 @@ mod test {
         cpu.load_program(&mem);
         cpu.reset();
         cpu.set_index_x(2);
-        cpu.get_memory()[0x52] = 0x10;
+        cpu.mem_write(0x52, 0x10);
         cpu.tick(); // fetch and decode
         cpu.tick(); // FetchZeroPage
         cpu.tick(); // AddXtoZeroPageAddress
@@ -360,7 +357,7 @@ mod test {
         cpu.load_program(&mem);
         cpu.reset();
         cpu.set_index_x(2);
-        cpu.get_memory()[0x01] = 0x10;
+        cpu.mem_write(0x01, 0x10);
         cpu.tick(); // fetch and decode
         cpu.tick(); // FetchZeroPage
         cpu.tick(); // AddXtoZeroPageAddress
@@ -376,7 +373,7 @@ mod test {
         let mem: [u8; 3] = [0xEE, 0xFF, 0x10];
         cpu.load_program(&mem);
         cpu.reset();
-        cpu.get_memory()[0x10FF] = 0x10;
+        cpu.mem_write(0x10FF, 0x10);
         cpu.tick(); // fetch and decode
         cpu.tick(); // FetchLowAddrByte
         cpu.tick(); // FetchHighAddrByte
@@ -392,7 +389,7 @@ mod test {
         let mem: [u8; 3] = [0xFE, 0xFF, 0x10];
         cpu.load_program(&mem);
         cpu.reset();
-        cpu.get_memory()[0x1100] = 0x10;
+        cpu.mem_write(0x1100, 0x10);
         cpu.set_index_x(1);
         cpu.tick(); // fetch and decode
         cpu.tick(); // FetchLowAddrByte
@@ -411,7 +408,7 @@ mod test {
         let mem: [u8; 3] = [0xC6, 0x50, 0x00];
         cpu.load_program(&mem);
         cpu.reset();
-        cpu.get_memory()[0x50] = 0x0A;
+        cpu.mem_write(0x50, 0x0A);
         cpu.tick(); // fetch and decode
         cpu.tick(); // FetchZeroPage
         cpu.tick(); // ReadAddress
@@ -427,7 +424,7 @@ mod test {
         cpu.load_program(&mem);
         cpu.reset();
         cpu.set_index_x(2);
-        cpu.get_memory()[0x52] = 0x0A;
+        cpu.mem_write(0x52, 0x0A);
         cpu.tick(); // fetch and decode
         cpu.tick(); // FetchZeroPage
         cpu.tick(); // AddXtoZeroPageAddress
@@ -443,7 +440,7 @@ mod test {
         let mem: [u8; 3] = [0xCE, 0xFF, 0x10];
         cpu.load_program(&mem);
         cpu.reset();
-        cpu.get_memory()[0x10FF] = 0x0A;
+        cpu.mem_write(0x10FF, 0x0A);
         cpu.tick(); // fetch and decode
         cpu.tick(); // FetchLowAddrByte
         cpu.tick(); // FetchHighAddrByte
@@ -459,7 +456,7 @@ mod test {
         let mem: [u8; 3] = [0xDE, 0xFF, 0x10];
         cpu.load_program(&mem);
         cpu.reset();
-        cpu.get_memory()[0x1100] = 0x0A;
+        cpu.mem_write(0x1100, 0x0A);
         cpu.set_index_x(1);
         cpu.tick(); // fetch and decode
         cpu.tick(); // FetchLowAddrByte
