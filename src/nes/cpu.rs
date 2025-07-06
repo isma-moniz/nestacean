@@ -8,6 +8,7 @@ pub enum MicroOp {
     LoadAccPlaceholder,
     Break,
     ReadAccumulator,
+    WriteAccumulatorToAddress,
     LoadAccumulatorImmediate,
     LoadAccumulatorFromAddress(u16),
     FetchLowAddrByte,
@@ -214,7 +215,7 @@ impl Cpu {
                 // LDA zero page + x
                 VecDeque::from(vec![
                     MicroOp::FetchZeroPage,
-                    MicroOp::AddXtoAddressPlaceholder,
+                    MicroOp::AddXtoZeroPageAddressPlaceholder,
                     MicroOp::LoadAccumulatorImmediate,
                 ])
             }
@@ -257,6 +258,65 @@ impl Cpu {
                     MicroOp::FetchZeroPage,
                     MicroOp::FetchPointerByteWithYPlaceholder,
                     MicroOp::LoadAccumulatorImmediate, // may add dummy cycle
+                ])
+            }
+            0x85 => {
+                // STA zero page
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::WriteAccumulatorToAddress,
+                ])
+            }
+            0x95 => {
+                // STA zero page + x
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::AddXtoZeroPageAddressPlaceholder,
+                    MicroOp::WriteAccumulatorToAddress,
+                ])
+            }
+            0x8D => {
+                // STA absolute
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByte,
+                    MicroOp::WriteAccumulatorToAddress,
+                ])
+            }
+            0x9D => {
+                // STA absolute + x
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByteWithX,
+                    MicroOp::ReadAddressPlaceholder,
+                    MicroOp::WriteAccumulatorToAddress,
+                ])
+            }
+            0x99 => {
+                // STA absolute + y
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByteWithY,
+                    MicroOp::ReadAddressPlaceholder,
+                    MicroOp::WriteAccumulatorToAddress,
+                ])
+            }
+            0x81 => {
+                // STA indexed indirect
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::AddXtoPointerPlaceholder,
+                    MicroOp::FetchPointerBytePlaceholder,
+                    MicroOp::WriteAccumulatorToAddress,
+                ])
+            }
+            0x91 => {
+                //STA indirect indexed
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::FetchPointerByteWithYPlaceholder,
+                    MicroOp::ReadAddressPlaceholder,
+                    MicroOp::WriteAccumulatorToAddress,
                 ])
             }
             0xAA => {
@@ -369,6 +429,10 @@ impl Cpu {
 
     fn push_micro_from_placeholder(&mut self, value: u16) {
         match self.current_inst.pop_front() {
+            Some(MicroOp::WriteAccumulatorToAddress) => {
+                self.current_inst
+                    .push_front(MicroOp::WriteAccumulatorToAddress);
+            }
             Some(MicroOp::WriteToAddressPlaceholder) => {
                 self.current_inst
                     .push_front(MicroOp::WriteToAddress(value as u8));
@@ -436,8 +500,8 @@ impl Cpu {
                 self.push_micro_from_placeholder(self.temp_addr);
             }
             MicroOp::AddXtoAddress(address) => {
-                let new_address = address.wrapping_add(self.index_x as u16);
-                self.push_micro_from_placeholder(new_address);
+                self.temp_addr = address.wrapping_add(self.index_x as u16);
+                self.push_micro_from_placeholder(self.temp_addr);
             }
             MicroOp::AddXtoZeroPageAddress(address) => {
                 self.temp_addr = address.wrapping_add(self.index_x as u8) as u16;
@@ -483,7 +547,8 @@ impl Cpu {
                 self.temp_addr |= (self.mem_read((pointer as u16).wrapping_add(1)) as u16) << 8;
                 let new_addr = self.temp_addr.wrapping_add(self.index_y as u16);
                 self.page_crossed = (self.temp_addr & 0xFF00) != (new_addr & 0xFF00);
-                self.push_micro_from_placeholder(new_addr);
+                self.temp_addr = new_addr;
+                self.push_micro_from_placeholder(self.temp_addr);
             }
             MicroOp::LoadAccumulatorImmediate => {
                 let value = self.memory[self.pc as usize];
@@ -538,6 +603,9 @@ impl Cpu {
                 self.mem_write(self.temp_addr, value);
 
                 self.set_flags_zero_neg(value);
+            }
+            MicroOp::WriteAccumulatorToAddress => {
+                self.mem_write(self.temp_addr, self.accumulator);
             }
             MicroOp::Break => {
                 //TODO: this op is more complex. research and implement.

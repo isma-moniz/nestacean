@@ -207,6 +207,20 @@ mod test {
         assert_eq!(cpu.is_page_crossed(), true);
     }
 
+    // STA tests
+    #[test]
+    fn test_sta_zeropage() {
+        let mut cpu = Cpu::new();
+        let mem: [u8; 3] = [0x85, 0x55, 0x00];
+        cpu.load_program(&mem);
+        cpu.reset();
+        cpu.set_accumulator(0x69);
+        cpu.tick(); // fetch and decode
+        cpu.tick(); // FetchZeroPage
+        cpu.tick(); // WriteAccumulatorToAddress
+        assert_eq!(cpu.get_accumulator(), 0x69);
+    }
+
     // TAX tests
     #[test]
     fn test_tax() {

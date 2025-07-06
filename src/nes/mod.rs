@@ -13,7 +13,7 @@ impl NES {
         let mem: [u8; 3] = [0xA5, 0x00, 0x00];
         cpu.load_program(&mem);
         cpu.reset();
-        cpu.get_memory()[0] = 0x05;
+        cpu.mem_write(0, 0x05);
 
         Self { clock: 0, cpu }
     }

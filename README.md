@@ -14,10 +14,10 @@ This is a WIP. I had the brilliant idea to make a cicle accurate emulator :D so 
 - [ ] BRK
 - [ ] LDX
 - [ ] LDY
-- [ ] STA
+- [x] STA
 - [ ] STY
 - [ ] STX
-- [ ] TAX
+- [x] TAX
 - [ ] TAY
 - [ ] TXA
 - [ ] TYA
