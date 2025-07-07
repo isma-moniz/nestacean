@@ -7,6 +7,8 @@ const FLAG_NEGATIVE: u8 = 0b1000_0000;
 
 #[derive(Debug)]
 pub enum MicroOp {
+    LogicalAnd,
+    LogicalAndAddress(u16),
     LoadAccPlaceholder,
     Break,
     ReadAccumulator,
@@ -513,6 +515,66 @@ impl Cpu {
                     MicroOp::PullStatus,
                 ])
             }
+            0x29 => {
+                // AND Immediate
+                VecDeque::from(vec![MicroOp::LogicalAnd])
+            }
+            0x25 => {
+                // AND zero page
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::LogicalAnd,
+                ])
+            }
+            0x35 => {
+                // AND zero page + x
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::AddXtoZeroPageAddressPlaceholder,
+                    MicroOp::LogicalAnd,
+                ])
+            }
+            0x2D => {
+                // AND absolute
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByte,
+                    MicroOp::LogicalAnd,
+                ])
+            }
+            0x3D => {
+                // AND absolute + x
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByteWithX,
+                    MicroOp::LogicalAnd,
+                ])
+            }
+            0x39 => {
+                // AND absolute + y
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByteWithY,
+                    MicroOp::LogicalAnd,
+                ])
+            }
+            0x21 => {
+                // AND indexed indirect
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::AddXtoPointerPlaceholder,
+                    MicroOp::FetchPointerBytePlaceholder,
+                    MicroOp::LogicalAnd,
+                ])
+            }
+            0x31 => {
+                // AND indirect indexed
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::FetchPointerByteWithYPlaceholder,
+                    MicroOp::LogicalAnd,
+                ])
+            }
             0xE6 => {
                 // INC zero page
                 VecDeque::from(vec![
@@ -647,6 +709,13 @@ impl Cpu {
             Some(MicroOp::LoadAccumulatorImmediate) => {
                 self.current_inst
                     .push_front(MicroOp::LoadAccumulatorFromAddress(value));
+                if self.page_crossed {
+                    self.page_crossed = false;
+                    self.current_inst.push_front(MicroOp::DummyCycle);
+                }
+            }
+            Some(MicroOp::LogicalAnd) => {
+                self.current_inst.push_front(MicroOp::LogicalAndAddress(value));
                 if self.page_crossed {
                     self.page_crossed = false;
                     self.current_inst.push_front(MicroOp::DummyCycle);
@@ -898,6 +967,19 @@ impl Cpu {
             }
             MicroOp::WriteYtoAddress => {
                 self.mem_write(self.temp_addr, self.index_y);
+            }
+            MicroOp::LogicalAnd => {
+                let value = self.mem_read(self.pc);
+                self.pc += 1;
+                self.accumulator &= value;
+                
+                self.set_flags_zero_neg(self.accumulator);
+            }
+            MicroOp::LogicalAndAddress(address) => {
+                let value = self.mem_read(address);
+                self.accumulator &= value;
+
+                self.set_flags_zero_neg(self.accumulator);
             }
             MicroOp::Break => {
                 //TODO: this op is more complex. research and implement.
