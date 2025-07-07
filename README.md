@@ -23,10 +23,10 @@ This is a WIP. I had the brilliant idea to make a cicle accurate emulator :D so 
 - [x] TYA
 - [x] TSX
 - [x] TXS
-- [ ] PHA
-- [ ] PHP
-- [ ] PLA
-- [ ] PLP
+- [x] PHA
+- [x] PHP
+- [x] PLA
+- [x] PLP
 - [ ] AND
 - [ ] EOR 
 - [ ] ORA

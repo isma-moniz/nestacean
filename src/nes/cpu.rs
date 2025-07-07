@@ -40,6 +40,11 @@ pub enum MicroOp {
     LoadAccumulatorX,
     LoadStackPointerX,
     LoadAccumulatorY,
+    PushAccumulator,
+    PushStatus,
+    PullAccumulator,
+    PullStatus,
+    IncrementSP(u8),
     IncrementX,
     IncrementY,
     DecrementX,
@@ -144,7 +149,7 @@ impl Cpu {
         self.accumulator = 0;
         self.index_x = 0;
         self.index_y = 0;
-        self.sp = 0;
+        self.sp = 0xFF; // TOP OF THE STACK! goes from 0x0100 to 0x01FF.
         self.status_p = 0;
         self.temp_addr = 0;
         self.page_crossed = false;
@@ -478,6 +483,36 @@ impl Cpu {
                 // TYA
                 VecDeque::from(vec![MicroOp::LoadAccumulatorY])
             }
+            0x48 => {
+                // PHA
+                VecDeque::from(vec![
+                    MicroOp::DummyCycle, // reads next inst byte, throws it away
+                    MicroOp::PushAccumulator,
+                ])
+            }
+            0x08 => {
+                // PHP
+                VecDeque::from(vec![
+                    MicroOp::DummyCycle,
+                    MicroOp::PushStatus,
+                ])
+            }
+            0x68 => {
+                // PLA
+                VecDeque::from(vec![
+                    MicroOp::DummyCycle,
+                    MicroOp::IncrementSP(1),
+                    MicroOp::PullAccumulator,
+                ])
+            }
+            0x28 => {
+                // PLP
+                VecDeque::from(vec![
+                    MicroOp::DummyCycle,
+                    MicroOp::IncrementSP(1),
+                    MicroOp::PullStatus,
+                ])
+            }
             0xE6 => {
                 // INC zero page
                 VecDeque::from(vec![
@@ -796,7 +831,29 @@ impl Cpu {
             }
             MicroOp::LoadStackPointerX => {
                 self.sp = self.index_x;
-                self.set_flags_zero_neg(self.sp);
+            }
+            MicroOp::PushAccumulator => {
+                let address: u16 = 0x0100 + self.sp as u16;
+                self.mem_write(address, self.accumulator);
+                self.sp = self.sp.wrapping_sub(1);
+            }
+            MicroOp::PushStatus => {
+                let address: u16 = 0x0100 + self.sp as u16;
+                self.mem_write(address, self.status_p);
+                self.sp = self.sp.wrapping_sub(1);
+            }
+            MicroOp::IncrementSP(value) => {
+                self.sp = self.sp.wrapping_add(value);
+            }
+            MicroOp::PullAccumulator => {
+                let address: u16 = 0x0100 + self.sp as u16;
+                self.accumulator = self.mem_read(address);
+
+                self.set_flags_zero_neg(self.accumulator);
+            }
+            MicroOp::PullStatus => {
+                let address: u16 = 0x0100 + self.sp as u16;
+                self.status_p = self.mem_read(address);
             }
             MicroOp::IncrementX => {
                 self.index_x = self.index_x.wrapping_add(1);
@@ -901,10 +958,18 @@ impl Cpu {
     }
 
     pub fn set_index_x(&mut self, val: u8) {
-        self.index_x = val
+        self.index_x = val;
     }
 
     pub fn set_index_y(&mut self, val: u8) {
-        self.index_y = val
+        self.index_y = val;
+    }
+
+    pub fn set_status_p(&mut self, val: u8) {
+        self.status_p = val;
+    }
+
+    pub fn set_sp(&mut self, val: u8) {
+        self.sp = val;
     }
 }

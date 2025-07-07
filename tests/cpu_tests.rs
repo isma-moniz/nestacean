@@ -476,6 +476,67 @@ mod test {
         assert_eq!(cpu.get_memory()[0x1100], 0x09);
     }
 
+    // stack tests
+    #[test]
+    fn test_pha() {
+        let mut cpu = Cpu::new();
+        let mem: [u8; 2] = [0x48, 0x00];
+        cpu.load_program(&mem);
+        cpu.reset();
+        cpu.set_accumulator(0x01);
+        cpu.tick(); // fetch and decode
+        cpu.tick(); // DummyCycle
+        cpu.tick(); // PushAccumulator
+        assert_eq!(cpu.get_memory()[0x01FF], 0x01);
+        assert_eq!(cpu.get_sp(), 0xFE);
+    }
+
+    #[test]
+    fn test_php() {
+        let mut cpu = Cpu::new();
+        let mem: [u8; 2] = [0x08, 0x00]; // PHP, BRK
+        cpu.load_program(&mem);
+        cpu.reset();
+        cpu.set_status_p(0b1010_1010);
+        cpu.tick(); // fetch and decode
+        cpu.tick(); // DummyCycle
+        cpu.tick(); // PushStatus
+        assert_eq!(cpu.get_memory()[0x01FF], 0b1010_1010);
+        assert_eq!(cpu.get_sp(), 0xFE);
+    }
+
+    #[test]
+    fn test_pla() {
+        let mut cpu = Cpu::new();
+        let mem: [u8; 2] = [0x68, 0x00];
+        cpu.load_program(&mem);
+        cpu.reset();
+        cpu.set_sp(0xFE);
+        cpu.mem_write(0x01FF, 0x01);
+        cpu.tick(); // fetch and decode
+        cpu.tick(); // DummyCycle
+        cpu.tick(); // IncrementSP
+        cpu.tick(); // PullAccumulator
+        assert_eq!(cpu.get_sp(), 0xFF);
+        assert_eq!(cpu.get_accumulator(), 0x01);
+    }
+
+    #[test]
+    fn test_plp() {
+        let mut cpu = Cpu::new();
+        let mem: [u8; 2] = [0x28, 0x00];
+        cpu.load_program(&mem);
+        cpu.reset();
+        cpu.set_sp(0xFE);
+        cpu.mem_write(0x01FF, 0x01);
+        cpu.tick(); // fetch and decode
+        cpu.tick(); // DummyCycle
+        cpu.tick(); // IncrementSP
+        cpu.tick(); // PullStatus
+        assert_eq!(cpu.get_sp(), 0xFF);
+        assert_eq!(cpu.get_status_p(), 0x01);
+    }
+
     // general testing
     #[test]
     fn test_5_ops() {
