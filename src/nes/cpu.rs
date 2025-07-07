@@ -2,6 +2,8 @@ use std::collections::VecDeque;
 use std::io::{self, Write};
 
 const CLS: &str = "\x1B[2J\x1B[1;1H";
+const FLAG_ZERO: u8 = 0b0000_0010;
+const FLAG_NEGATIVE: u8 = 0b1000_0000;
 
 #[derive(Debug)]
 pub enum MicroOp {
@@ -66,7 +68,7 @@ pub struct Cpu {
     sp: u8,
     status_p: u8,
     current_inst: VecDeque<MicroOp>,
-    memory: Box<[u8; 0xFFFF]>,
+    memory: Box<[u8; 0x10000]>,
     temp_addr: u16,
     page_crossed: bool,
     debug_active: bool,
@@ -83,7 +85,7 @@ impl Cpu {
             sp: 0u8,
             status_p: 0u8,
             current_inst: VecDeque::new(),
-            memory: Box::new([0u8; 0xFFFF]),
+            memory: Box::new([0u8; 0x10000]),
             temp_addr: 0u16,
             page_crossed: false,
             debug_active: false,
@@ -119,16 +121,16 @@ impl Cpu {
     fn set_flags_zero_neg(&mut self, value: u8) {
         // set zero flag
         if value == 0x00 {
-            self.status_p = self.status_p | 0b0000_0010;
+            self.status_p |= FLAG_ZERO;
         } else {
-            self.status_p = self.status_p & 0b1111_1101;
+            self.status_p &= !FLAG_ZERO;
         }
 
         // set negative flag
         if value & 0b1000_0000 != 0 {
-            self.status_p = self.status_p | 0b1000_0000;
+            self.status_p |= FLAG_NEGATIVE;
         } else {
-            self.status_p = self.status_p & 0b0111_1111;
+            self.status_p &= !FLAG_NEGATIVE;
         }
     }
 
@@ -837,7 +839,7 @@ impl Cpu {
         &self.current_inst
     }
 
-    pub fn get_memory(&self) -> &[u8; 0xFFFF] {
+    pub fn get_memory(&self) -> &[u8; 0x10000] {
         &self.memory
     }
 
