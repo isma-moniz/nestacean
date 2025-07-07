@@ -18,11 +18,11 @@ This is a WIP. I had the brilliant idea to make a cicle accurate emulator :D so 
 - [x] STY
 - [x] STX
 - [x] TAX
-- [ ] TAY
-- [ ] TXA
-- [ ] TYA
-- [ ] TSX
-- [ ] TXS
+- [x] TAY
+- [x] TXA
+- [x] TYA
+- [x] TSX
+- [x] TXS
 - [ ] PHA
 - [ ] PHP
 - [ ] PLA
