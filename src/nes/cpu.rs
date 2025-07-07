@@ -13,6 +13,10 @@ pub enum MicroOp {
     WriteYtoAddress,
     LoadAccumulatorImmediate,
     LoadAccumulatorFromAddress(u16),
+    LoadXImmediate,
+    LoadXfromAddress(u16),
+    LoadYImmediate,
+    LoadYfromAddress(u16),
     FetchLowAddrByte,
     FetchHighAddrByte,
     FetchHighAddrByteWithX,
@@ -264,6 +268,80 @@ impl Cpu {
                     MicroOp::LoadAccumulatorImmediate, // may add dummy cycle
                 ])
             }
+            0xA2 => {
+                // LDX
+                VecDeque::from(vec![
+                    MicroOp::LoadXImmediate,
+                ])
+            }
+            0xA6 => {
+                // LDX zero page
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::LoadXImmediate,
+                ])
+            }
+            0xB6 => {
+                // LDX zero page + y
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::AddYtoZeroPageAddressPlaceholder,
+                    MicroOp::LoadXImmediate,
+                ])
+            }
+            0xAE => {
+                // LDX absolute
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByte,
+                    MicroOp::LoadXImmediate,
+                ])
+            }
+            0xBE => {
+                // LDX absolute + y
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByteWithY,
+                    MicroOp::LoadXImmediate,
+                ])
+            }
+            0xA0 => {
+                // LDY immediate
+                VecDeque::from(vec![
+                    MicroOp::LoadYImmediate,
+                ])
+            }
+            0xA4 => {
+                // LDY zero page
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::LoadYImmediate,
+                ])
+            }
+            0xB4 => {
+                // LDY zero page + x
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::AddXtoZeroPageAddressPlaceholder,
+                    MicroOp::LoadYImmediate,
+                ])
+            }
+            0xAC => {
+                // LDY absolute
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByte,
+                    MicroOp::LoadYImmediate,
+                ])
+            }
+            0xBC => {
+                // LDY absolute + x
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByteWithX,
+                    MicroOp::LoadYImmediate,
+                ])
+            }
             0x85 => {
                 // STA zero page
                 VecDeque::from(vec![
@@ -508,6 +586,21 @@ impl Cpu {
                 self.current_inst
                     .push_front(MicroOp::LoadAccumulatorFromAddress(value));
                 if self.page_crossed {
+                    self.page_crossed = false;
+                    self.current_inst.push_front(MicroOp::DummyCycle);
+                }
+            }
+            Some(MicroOp::LoadXImmediate) => {
+                self.current_inst.push_front(MicroOp::LoadXfromAddress(value));
+                if self.page_crossed {
+                    self.page_crossed = false;
+                    self.current_inst.push_front(MicroOp::DummyCycle);
+                }
+            }
+            Some(MicroOp::LoadYImmediate) => {
+                self.current_inst.push_front(MicroOp::LoadYfromAddress(value));
+                if self.page_crossed {
+                    self.page_crossed = false;
                     self.current_inst.push_front(MicroOp::DummyCycle);
                 }
             }
@@ -624,6 +717,32 @@ impl Cpu {
                 let value = self.memory[address as usize];
                 self.accumulator = value;
 
+                self.set_flags_zero_neg(value);
+            }
+            MicroOp::LoadXImmediate => {
+                let value = self.memory[self.pc as usize];
+                self.pc += 1;
+                self.index_x = value;
+
+                self.set_flags_zero_neg(value);
+            }
+            MicroOp::LoadXfromAddress(address) => {
+                let value = self.memory[address as usize];
+                self.index_x = value;
+
+                self.set_flags_zero_neg(value);
+            }
+            MicroOp::LoadYImmediate => {
+                let value = self.memory[self.pc as usize];
+                self.pc += 1;
+                self.index_y = value;
+
+                self.set_flags_zero_neg(value);
+            }
+            MicroOp::LoadYfromAddress(address) => {
+                let value = self.memory[address as usize];
+                self.index_y = value;
+                
                 self.set_flags_zero_neg(value);
             }
             MicroOp::LoadXAccumulator => {

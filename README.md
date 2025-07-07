@@ -12,11 +12,11 @@ This is a WIP. I had the brilliant idea to make a cicle accurate emulator :D so 
 - [x] DEY
 - [x] DEX
 - [ ] BRK
-- [ ] LDX
-- [ ] LDY
+- [x] LDX
+- [x] LDY
 - [x] STA
-- [ ] STY
-- [ ] STX
+- [x] STY
+- [x] STX
 - [x] TAX
 - [ ] TAY
 - [ ] TXA
