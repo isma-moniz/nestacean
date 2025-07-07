@@ -35,6 +35,11 @@ pub enum MicroOp {
     AddYLoadImmediate(u16),
     FetchZeroPage,
     LoadXAccumulator,
+    LoadYAccumulator,
+    LoadXStackPointer,
+    LoadAccumulatorX,
+    LoadStackPointerX,
+    LoadAccumulatorY,
     IncrementX,
     IncrementY,
     DecrementX,
@@ -453,6 +458,26 @@ impl Cpu {
                 // TAX
                 VecDeque::from(vec![MicroOp::LoadXAccumulator])
             }
+            0xA8 => {
+                // TAY
+                VecDeque::from(vec![MicroOp::LoadYAccumulator])
+            }
+            0xBA => {
+                // TSX
+                VecDeque::from(vec![MicroOp::LoadXStackPointer])
+            }
+            0x8A => {
+                // TXA
+                VecDeque::from(vec![MicroOp::LoadAccumulatorX])
+            }
+            0x9A => {
+                // TXS
+                VecDeque::from(vec![MicroOp::LoadStackPointerX])
+            }
+            0x98 => {
+                // TYA
+                VecDeque::from(vec![MicroOp::LoadAccumulatorY])
+            }
             0xE6 => {
                 // INC zero page
                 VecDeque::from(vec![
@@ -748,10 +773,30 @@ impl Cpu {
                 self.set_flags_zero_neg(value);
             }
             MicroOp::LoadXAccumulator => {
-                let value = self.accumulator;
-                self.index_x = value;
+                self.index_x = self.accumulator;
 
-                self.set_flags_zero_neg(value);
+                self.set_flags_zero_neg(self.index_x);
+            }
+            MicroOp::LoadYAccumulator => {
+                self.index_y = self.accumulator;
+
+                self.set_flags_zero_neg(self.index_y);
+            }
+            MicroOp::LoadXStackPointer => {
+                self.index_x = self.sp;
+                self.set_flags_zero_neg(self.index_x);
+            }
+            MicroOp::LoadAccumulatorX => {
+                self.accumulator = self.index_x;
+                self.set_flags_zero_neg(self.accumulator);
+            }
+            MicroOp::LoadAccumulatorY => {
+                self.accumulator = self.index_y;
+                self.set_flags_zero_neg(self.accumulator);
+            }
+            MicroOp::LoadStackPointerX => {
+                self.sp = self.index_x;
+                self.set_flags_zero_neg(self.sp);
             }
             MicroOp::IncrementX => {
                 self.index_x = self.index_x.wrapping_add(1);

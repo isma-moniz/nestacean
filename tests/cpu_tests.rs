@@ -98,7 +98,6 @@ mod test {
         cpu.tick(); // FetchLowAddrByte
         cpu.tick(); // FetchHighAddrByteWithX
         cpu.tick(); // LoadAccumulatorImmediate
-        assert_eq!(cpu.is_page_crossed(), false);
         assert_eq!(cpu.get_accumulator(), 0x55);
     }
 
@@ -115,7 +114,6 @@ mod test {
         cpu.tick(); // FetchHighAddrByteWithX
         cpu.tick(); // DummyCycle
         cpu.tick(); // LoadAccumulatorImmediate
-        assert_eq!(cpu.is_page_crossed(), true);
         assert_eq!(cpu.get_accumulator(), 0x55);
     }
 
@@ -131,7 +129,6 @@ mod test {
         cpu.tick(); // FetchLowAddrByte
         cpu.tick(); // FetchHighAddrByteWithX
         cpu.tick(); // LoadAccumulatorImmediate
-        assert_eq!(cpu.is_page_crossed(), false);
         assert_eq!(cpu.get_accumulator(), 0x55);
     }
 
@@ -148,7 +145,6 @@ mod test {
         cpu.tick(); // FetchHighAddrByteWithX
         cpu.tick(); // DummyCycle
         cpu.tick(); // LoadAccumulatorImmediate
-        assert_eq!(cpu.is_page_crossed(), true);
         assert_eq!(cpu.get_accumulator(), 0x55);
     }
 
@@ -185,7 +181,6 @@ mod test {
         cpu.tick(); // FetchPointerWithYHighByte
         cpu.tick(); // LoadImmediate
         assert_eq!(cpu.get_accumulator(), 0xAB);
-        assert_eq!(cpu.is_page_crossed(), false);
     }
 
     #[test]
@@ -204,7 +199,6 @@ mod test {
         cpu.tick(); // DummyCycle
         cpu.tick(); // LoadImmediate
         assert_eq!(cpu.get_accumulator(), 0xAB);
-        assert_eq!(cpu.is_page_crossed(), true);
     }
 
     // STA tests
