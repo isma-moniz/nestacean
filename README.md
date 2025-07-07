@@ -27,8 +27,8 @@ This is a WIP. I had the brilliant idea to make a cicle accurate emulator :D so 
 - [x] PHP
 - [x] PLA
 - [x] PLP
-- [ ] AND
-- [ ] EOR 
+- [x] AND
+- [x] EOR 
 - [ ] ORA
 - [ ] BIT 
 - [ ] ADC

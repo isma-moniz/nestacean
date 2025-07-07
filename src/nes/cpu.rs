@@ -7,6 +7,8 @@ const FLAG_NEGATIVE: u8 = 0b1000_0000;
 
 #[derive(Debug)]
 pub enum MicroOp {
+    ExclusiveOr,
+    ExclusiveOrAddress(u16),
     LogicalAnd,
     LogicalAndAddress(u16),
     LoadAccPlaceholder,
@@ -575,6 +577,66 @@ impl Cpu {
                     MicroOp::LogicalAnd,
                 ])
             }
+            0x49 => {
+                // EOR immediate
+                VecDeque::from(vec![MicroOp::ExclusiveOr])
+            }
+            0x45 => {
+                // EOR zero page
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::ExclusiveOr
+                ])
+            }
+            0x55 => {
+                // EOR zero page + x
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::AddXtoZeroPageAddressPlaceholder,
+                    MicroOp::ExclusiveOr,
+                ])
+            }
+            0x4D => {
+                // EOR absolute
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByte,
+                    MicroOp::ExclusiveOr,
+                ])
+            }
+            0x5D => {
+                // EOR absolute + x
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByteWithX,
+                    MicroOp::ExclusiveOr,
+                ])
+            }
+            0x59 => {
+                // EOR absolute + y
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByteWithY,
+                    MicroOp::ExclusiveOr,
+                ])
+            }
+            0x41 => {
+                // EOR indexed indirect
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::AddXtoPointerPlaceholder,
+                    MicroOp::FetchPointerBytePlaceholder,
+                    MicroOp::ExclusiveOr,
+                ])
+            }
+            0x51 => {
+                // EOR indirect indexed
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::FetchPointerByteWithYPlaceholder,
+                    MicroOp::ExclusiveOr,
+                ])
+            }
             0xE6 => {
                 // INC zero page
                 VecDeque::from(vec![
@@ -716,6 +778,13 @@ impl Cpu {
             }
             Some(MicroOp::LogicalAnd) => {
                 self.current_inst.push_front(MicroOp::LogicalAndAddress(value));
+                if self.page_crossed {
+                    self.page_crossed = false;
+                    self.current_inst.push_front(MicroOp::DummyCycle);
+                }
+            }
+            Some(MicroOp::ExclusiveOr) => {
+                self.current_inst.push_front(MicroOp::ExclusiveOrAddress(value));
                 if self.page_crossed {
                     self.page_crossed = false;
                     self.current_inst.push_front(MicroOp::DummyCycle);
@@ -978,6 +1047,19 @@ impl Cpu {
             MicroOp::LogicalAndAddress(address) => {
                 let value = self.mem_read(address);
                 self.accumulator &= value;
+
+                self.set_flags_zero_neg(self.accumulator);
+            }
+            MicroOp::ExclusiveOr => {
+                let value = self.mem_read(self.pc);
+                self.pc += 1;
+                self.accumulator ^= value;
+
+                self.set_flags_zero_neg(self.accumulator);
+            }
+            MicroOp::ExclusiveOrAddress(address) => {
+                let value = self.mem_read(address);
+                self.accumulator ^= value;
 
                 self.set_flags_zero_neg(self.accumulator);
             }
