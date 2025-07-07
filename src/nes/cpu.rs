@@ -9,6 +9,8 @@ pub enum MicroOp {
     Break,
     ReadAccumulator,
     WriteAccumulatorToAddress,
+    WriteXtoAddress,
+    WriteYtoAddress,
     LoadAccumulatorImmediate,
     LoadAccumulatorFromAddress(u16),
     FetchLowAddrByte,
@@ -19,6 +21,8 @@ pub enum MicroOp {
     AddXtoAddress(u16),
     AddXtoZeroPageAddressPlaceholder,
     AddXtoZeroPageAddress(u8),
+    AddYtoZeroPageAddressPlaceholder,
+    AddYtoZeroPageAddress(u8),
     AddXLoadImmediatePlaceholder,
     AddXLoadImmediate(u16),
     AddYLoadImmediatePlaceholder,
@@ -319,6 +323,52 @@ impl Cpu {
                     MicroOp::WriteAccumulatorToAddress,
                 ])
             }
+            0x86 => {
+                // STX zero page
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::WriteXtoAddress,
+                ])
+            }
+            0x96 => {
+                // STX zero page + y
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::AddYtoZeroPageAddressPlaceholder,
+                    MicroOp::WriteXtoAddress,
+                ])
+            }
+            0x8E => {
+                // STX absolute
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByte,
+                    MicroOp::WriteXtoAddress,
+                ])
+            }
+            0x84 => {
+                // STY zero page
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::WriteYtoAddress,
+                ])
+            }
+            0x94 => {
+                // STY zero page + x
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::AddXtoZeroPageAddressPlaceholder,
+                    MicroOp::WriteYtoAddress,
+                ])
+            }
+            0x8C => {
+                // STY absolute
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByte,
+                    MicroOp::WriteYtoAddress,
+                ])
+            }
             0xAA => {
                 // TAX
                 VecDeque::from(vec![MicroOp::LoadXAccumulator])
@@ -429,6 +479,12 @@ impl Cpu {
 
     fn push_micro_from_placeholder(&mut self, value: u16) {
         match self.current_inst.pop_front() {
+            Some(MicroOp::WriteXtoAddress) => {
+                self.current_inst.push_front(MicroOp::WriteXtoAddress);
+            }
+            Some(MicroOp::WriteYtoAddress) => {
+                self.current_inst.push_front(MicroOp::WriteYtoAddress);
+            }
             Some(MicroOp::WriteAccumulatorToAddress) => {
                 self.current_inst
                     .push_front(MicroOp::WriteAccumulatorToAddress);
@@ -461,6 +517,9 @@ impl Cpu {
             Some(MicroOp::AddXtoZeroPageAddressPlaceholder) => {
                 self.current_inst
                     .push_front(MicroOp::AddXtoZeroPageAddress(value as u8));
+            }
+            Some(MicroOp::AddYtoZeroPageAddressPlaceholder) => {
+                self.current_inst.push_front(MicroOp::AddYtoZeroPageAddress(value as u8));
             }
             Some(MicroOp::AddXtoPointerPlaceholder) => {
                 self.current_inst
@@ -505,6 +564,10 @@ impl Cpu {
             }
             MicroOp::AddXtoZeroPageAddress(address) => {
                 self.temp_addr = address.wrapping_add(self.index_x as u8) as u16;
+                self.push_micro_from_placeholder(self.temp_addr);
+            }
+            MicroOp::AddYtoZeroPageAddress(address) => {
+                self.temp_addr = address.wrapping_add(self.index_y as u8) as u16;
                 self.push_micro_from_placeholder(self.temp_addr);
             }
             MicroOp::AddXtoPointer(pointer) => {
@@ -606,6 +669,12 @@ impl Cpu {
             }
             MicroOp::WriteAccumulatorToAddress => {
                 self.mem_write(self.temp_addr, self.accumulator);
+            }
+            MicroOp::WriteXtoAddress => {
+                self.mem_write(self.temp_addr, self.index_x);
+            }
+            MicroOp::WriteYtoAddress => {
+                self.mem_write(self.temp_addr, self.index_y);
             }
             MicroOp::Break => {
                 //TODO: this op is more complex. research and implement.
