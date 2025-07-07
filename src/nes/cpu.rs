@@ -11,6 +11,8 @@ pub enum MicroOp {
     ExclusiveOrAddress(u16),
     LogicalAnd,
     LogicalAndAddress(u16),
+    InclusiveOr,
+    InclusiveOrAddress(u16),
     LoadAccPlaceholder,
     Break,
     ReadAccumulator,
@@ -637,6 +639,66 @@ impl Cpu {
                     MicroOp::ExclusiveOr,
                 ])
             }
+            0x09 => {
+                // ORA immediate
+                VecDeque::from(vec![MicroOp::InclusiveOr])
+            }
+            0x05 => {
+                // ORA zero page
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::InclusiveOr
+                ])
+            }
+            0x15 => {
+                // ORA zero page + x
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::AddXtoZeroPageAddressPlaceholder,
+                    MicroOp::InclusiveOr,
+                ])
+            }
+            0x0D => {
+                // ORA absolute
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByte,
+                    MicroOp::InclusiveOr,
+                ])
+            }
+            0x1D => {
+                // ORA absolute + x
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByteWithX,
+                    MicroOp::InclusiveOr,
+                ])
+            }
+            0x19 => {
+                // ORA absolute + y
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByteWithY,
+                    MicroOp::InclusiveOr,
+                ])
+            }
+            0x01 => {
+                // ORA indexed indirect
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::AddXtoPointerPlaceholder,
+                    MicroOp::FetchPointerBytePlaceholder,
+                    MicroOp::InclusiveOr,
+                ])
+            }
+            0x11 => {
+                // ORA indirect indexed
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::FetchPointerByteWithYPlaceholder,
+                    MicroOp::InclusiveOr,
+                ])
+            }
             0xE6 => {
                 // INC zero page
                 VecDeque::from(vec![
@@ -785,6 +847,13 @@ impl Cpu {
             }
             Some(MicroOp::ExclusiveOr) => {
                 self.current_inst.push_front(MicroOp::ExclusiveOrAddress(value));
+                if self.page_crossed {
+                    self.page_crossed = false;
+                    self.current_inst.push_front(MicroOp::DummyCycle);
+                }
+            }
+            Some(MicroOp::InclusiveOr) => {
+                self.current_inst.push_front(MicroOp::InclusiveOrAddress(value));
                 if self.page_crossed {
                     self.page_crossed = false;
                     self.current_inst.push_front(MicroOp::DummyCycle);
@@ -1060,6 +1129,19 @@ impl Cpu {
             MicroOp::ExclusiveOrAddress(address) => {
                 let value = self.mem_read(address);
                 self.accumulator ^= value;
+
+                self.set_flags_zero_neg(self.accumulator);
+            }
+            MicroOp::InclusiveOr => {
+                let value = self.mem_read(self.pc);
+                self.pc += 1;
+                self.accumulator |= value;
+
+                self.set_flags_zero_neg(self.accumulator);
+            }
+            MicroOp::InclusiveOrAddress(address) => {
+                let value = self.mem_read(address);
+                self.accumulator |= value;
 
                 self.set_flags_zero_neg(self.accumulator);
             }
