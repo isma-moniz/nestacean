@@ -2,8 +2,11 @@ use std::collections::VecDeque;
 use std::io::{self, Write};
 
 const CLS: &str = "\x1B[2J\x1B[1;1H";
+
 const FLAG_ZERO: u8 = 0b0000_0010;
 const FLAG_NEGATIVE: u8 = 0b1000_0000;
+const FLAG_CARRY: u8 = 0b0000_0001;
+const FLAG_OVERFLOW: u8 = 0b0100_0000;
 
 #[derive(Debug)]
 pub enum MicroOp {
@@ -15,6 +18,8 @@ pub enum MicroOp {
     InclusiveOrAddress(u16),
     BitTestPlaceholder,
     BitTest(u16),
+    AddWithCarry,
+    AddWithCarryAddress(u16),
     LoadAccPlaceholder,
     Break,
     ReadAccumulator,
@@ -685,6 +690,63 @@ impl Cpu {
                     MicroOp::BitTestPlaceholder,
                 ])
             }
+            0x69 => {
+                // ADC
+                VecDeque::from(vec![MicroOp::AddWithCarry])
+            }
+            0x65 => {
+                // ADC zero page
+                VecDeque::from(vec![MicroOp::FetchZeroPage, MicroOp::AddWithCarry])
+            }
+            0x75 => {
+                // ADC zero page + x
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::AddXtoZeroPageAddressPlaceholder,
+                    MicroOp::AddWithCarry,
+                ])
+            }
+            0x6D => {
+                // ADC absolute
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByte,
+                    MicroOp::AddWithCarry,
+                ])
+            }
+            0x7D => {
+                // ADC absolute + x
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByteWithX,
+                    MicroOp::AddWithCarry,
+                ])
+            }
+            0x79 => {
+                // ADC absolute + y
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByteWithY,
+                    MicroOp::AddWithCarry,
+                ])
+            }
+            0x61 => {
+                // ADC indexed indirect
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::AddXtoPointerPlaceholder,
+                    MicroOp::FetchPointerBytePlaceholder,
+                    MicroOp::AddWithCarry,
+                ])
+            }
+            0x71 => {
+                // ADC indirect indexed
+                VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::FetchPointerByteWithYPlaceholder,
+                    MicroOp::AddWithCarry,
+                ])
+            }
             0xE6 => {
                 // INC zero page
                 VecDeque::from(vec![
@@ -850,6 +912,14 @@ impl Cpu {
             }
             Some(MicroOp::BitTestPlaceholder) => {
                 self.current_inst.push_front(MicroOp::BitTest(value));
+            }
+            Some(MicroOp::AddWithCarry) => {
+                self.current_inst
+                    .push_front(MicroOp::AddWithCarryAddress(value));
+                if self.page_crossed {
+                    self.page_crossed = false;
+                    self.current_inst.push_front(MicroOp::DummyCycle);
+                }
             }
             Some(MicroOp::LoadXImmediate) => {
                 self.current_inst
@@ -1153,6 +1223,55 @@ impl Cpu {
 
                 self.status_p = self.status_p & !(0b1100_0000); // clear neg and overflow flags
                 self.status_p |= value & 0b1100_0000;
+            }
+            MicroOp::AddWithCarry => {
+                let value = self.mem_read(self.pc);
+                self.pc += 1;
+                let carry_in: u16 = if self.status_p & FLAG_CARRY != 0 {
+                    1
+                } else {
+                    0
+                };
+
+                let sum = self.accumulator as u16 + value as u16 + carry_in;
+                let result = sum as u8;
+                if sum > 0xFF {
+                    self.status_p |= FLAG_CARRY;
+                } else {
+                    self.status_p &= !FLAG_CARRY;
+                }
+
+                self.set_flags_zero_neg(result);
+
+                if ((self.accumulator ^ result) & (value ^ result) & 0x80) != 0 {
+                    self.status_p |= FLAG_OVERFLOW;
+                } else {
+                    self.status_p &= !FLAG_OVERFLOW;
+                }
+
+                self.accumulator = result;
+            }
+            MicroOp::AddWithCarryAddress(address) => {
+                let value = self.mem_read(address);
+                let carry_in = if self.status_p & FLAG_CARRY != 0 {
+                    1
+                } else {
+                    0
+                };
+                let sum = self.accumulator as u16 + value as u16 + carry_in;
+                let result = sum as u8;
+                if sum > 0xFF {
+                    self.status_p |= FLAG_CARRY;
+                } else {
+                    self.status_p &= !FLAG_CARRY;
+                }
+                self.set_flags_zero_neg(result);
+                if ((self.accumulator ^ result) & (value ^ result) & 0x80) != 0 {
+                    self.status_p |= FLAG_OVERFLOW;
+                } else {
+                    self.status_p &= !FLAG_OVERFLOW;
+                }
+                self.accumulator = result;
             }
             MicroOp::Break => {
                 //TODO: this op is more complex. research and implement.
