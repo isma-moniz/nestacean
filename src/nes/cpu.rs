@@ -13,6 +13,8 @@ pub enum MicroOp {
     LogicalAndAddress(u16),
     InclusiveOr,
     InclusiveOrAddress(u16),
+    BitTestPlaceholder,
+    BitTest(u16),
     LoadAccPlaceholder,
     Break,
     ReadAccumulator,
@@ -288,16 +290,11 @@ impl Cpu {
             }
             0xA2 => {
                 // LDX
-                VecDeque::from(vec![
-                    MicroOp::LoadXImmediate,
-                ])
+                VecDeque::from(vec![MicroOp::LoadXImmediate])
             }
             0xA6 => {
                 // LDX zero page
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::LoadXImmediate,
-                ])
+                VecDeque::from(vec![MicroOp::FetchZeroPage, MicroOp::LoadXImmediate])
             }
             0xB6 => {
                 // LDX zero page + y
@@ -325,16 +322,11 @@ impl Cpu {
             }
             0xA0 => {
                 // LDY immediate
-                VecDeque::from(vec![
-                    MicroOp::LoadYImmediate,
-                ])
+                VecDeque::from(vec![MicroOp::LoadYImmediate])
             }
             0xA4 => {
                 // LDY zero page
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::LoadYImmediate,
-                ])
+                VecDeque::from(vec![MicroOp::FetchZeroPage, MicroOp::LoadYImmediate])
             }
             0xB4 => {
                 // LDY zero page + x
@@ -421,10 +413,7 @@ impl Cpu {
             }
             0x86 => {
                 // STX zero page
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::WriteXtoAddress,
-                ])
+                VecDeque::from(vec![MicroOp::FetchZeroPage, MicroOp::WriteXtoAddress])
             }
             0x96 => {
                 // STX zero page + y
@@ -444,10 +433,7 @@ impl Cpu {
             }
             0x84 => {
                 // STY zero page
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::WriteYtoAddress,
-                ])
+                VecDeque::from(vec![MicroOp::FetchZeroPage, MicroOp::WriteYtoAddress])
             }
             0x94 => {
                 // STY zero page + x
@@ -498,10 +484,7 @@ impl Cpu {
             }
             0x08 => {
                 // PHP
-                VecDeque::from(vec![
-                    MicroOp::DummyCycle,
-                    MicroOp::PushStatus,
-                ])
+                VecDeque::from(vec![MicroOp::DummyCycle, MicroOp::PushStatus])
             }
             0x68 => {
                 // PLA
@@ -525,10 +508,7 @@ impl Cpu {
             }
             0x25 => {
                 // AND zero page
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::LogicalAnd,
-                ])
+                VecDeque::from(vec![MicroOp::FetchZeroPage, MicroOp::LogicalAnd])
             }
             0x35 => {
                 // AND zero page + x
@@ -585,10 +565,7 @@ impl Cpu {
             }
             0x45 => {
                 // EOR zero page
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::ExclusiveOr
-                ])
+                VecDeque::from(vec![MicroOp::FetchZeroPage, MicroOp::ExclusiveOr])
             }
             0x55 => {
                 // EOR zero page + x
@@ -645,10 +622,7 @@ impl Cpu {
             }
             0x05 => {
                 // ORA zero page
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::InclusiveOr
-                ])
+                VecDeque::from(vec![MicroOp::FetchZeroPage, MicroOp::InclusiveOr])
             }
             0x15 => {
                 // ORA zero page + x
@@ -697,6 +671,18 @@ impl Cpu {
                     MicroOp::FetchZeroPage,
                     MicroOp::FetchPointerByteWithYPlaceholder,
                     MicroOp::InclusiveOr,
+                ])
+            }
+            0x24 => {
+                // BIT zero page
+                VecDeque::from(vec![MicroOp::FetchZeroPage, MicroOp::BitTestPlaceholder])
+            }
+            0x2C => {
+                // BIT absolute
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByte,
+                    MicroOp::BitTestPlaceholder,
                 ])
             }
             0xE6 => {
@@ -839,35 +825,43 @@ impl Cpu {
                 }
             }
             Some(MicroOp::LogicalAnd) => {
-                self.current_inst.push_front(MicroOp::LogicalAndAddress(value));
+                self.current_inst
+                    .push_front(MicroOp::LogicalAndAddress(value));
                 if self.page_crossed {
                     self.page_crossed = false;
                     self.current_inst.push_front(MicroOp::DummyCycle);
                 }
             }
             Some(MicroOp::ExclusiveOr) => {
-                self.current_inst.push_front(MicroOp::ExclusiveOrAddress(value));
+                self.current_inst
+                    .push_front(MicroOp::ExclusiveOrAddress(value));
                 if self.page_crossed {
                     self.page_crossed = false;
                     self.current_inst.push_front(MicroOp::DummyCycle);
                 }
             }
             Some(MicroOp::InclusiveOr) => {
-                self.current_inst.push_front(MicroOp::InclusiveOrAddress(value));
+                self.current_inst
+                    .push_front(MicroOp::InclusiveOrAddress(value));
                 if self.page_crossed {
                     self.page_crossed = false;
                     self.current_inst.push_front(MicroOp::DummyCycle);
                 }
             }
+            Some(MicroOp::BitTestPlaceholder) => {
+                self.current_inst.push_front(MicroOp::BitTest(value));
+            }
             Some(MicroOp::LoadXImmediate) => {
-                self.current_inst.push_front(MicroOp::LoadXfromAddress(value));
+                self.current_inst
+                    .push_front(MicroOp::LoadXfromAddress(value));
                 if self.page_crossed {
                     self.page_crossed = false;
                     self.current_inst.push_front(MicroOp::DummyCycle);
                 }
             }
             Some(MicroOp::LoadYImmediate) => {
-                self.current_inst.push_front(MicroOp::LoadYfromAddress(value));
+                self.current_inst
+                    .push_front(MicroOp::LoadYfromAddress(value));
                 if self.page_crossed {
                     self.page_crossed = false;
                     self.current_inst.push_front(MicroOp::DummyCycle);
@@ -881,7 +875,8 @@ impl Cpu {
                     .push_front(MicroOp::AddXtoZeroPageAddress(value as u8));
             }
             Some(MicroOp::AddYtoZeroPageAddressPlaceholder) => {
-                self.current_inst.push_front(MicroOp::AddYtoZeroPageAddress(value as u8));
+                self.current_inst
+                    .push_front(MicroOp::AddYtoZeroPageAddress(value as u8));
             }
             Some(MicroOp::AddXtoPointerPlaceholder) => {
                 self.current_inst
@@ -1011,7 +1006,7 @@ impl Cpu {
             MicroOp::LoadYfromAddress(address) => {
                 let value = self.memory[address as usize];
                 self.index_y = value;
-                
+
                 self.set_flags_zero_neg(value);
             }
             MicroOp::LoadXAccumulator => {
@@ -1110,7 +1105,7 @@ impl Cpu {
                 let value = self.mem_read(self.pc);
                 self.pc += 1;
                 self.accumulator &= value;
-                
+
                 self.set_flags_zero_neg(self.accumulator);
             }
             MicroOp::LogicalAndAddress(address) => {
@@ -1144,6 +1139,20 @@ impl Cpu {
                 self.accumulator |= value;
 
                 self.set_flags_zero_neg(self.accumulator);
+            }
+            MicroOp::BitTest(address) => {
+                let value = self.mem_read(address);
+                let temp = value & self.accumulator;
+
+                // set zero flag
+                if temp == 0x00 {
+                    self.status_p |= FLAG_ZERO;
+                } else {
+                    self.status_p &= !FLAG_ZERO;
+                }
+
+                self.status_p = self.status_p & !(0b1100_0000); // clear neg and overflow flags
+                self.status_p |= value & 0b1100_0000;
             }
             MicroOp::Break => {
                 //TODO: this op is more complex. research and implement.
