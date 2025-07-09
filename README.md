@@ -34,8 +34,8 @@ This is a WIP. I had the brilliant idea to make a cicle accurate emulator :D so 
 - [x] ADC
 - [x] SBC
 - [x] CMP
-- [ ] CPX
-- [ ] CPY
+- [x] CPX
+- [x] CPY
 - [ ] ASL
 - [ ] LSR
 - [ ] ROL

@@ -41,6 +41,10 @@ pub enum MicroOp {
     SubWithCarryAddress(u16),
     Compare,
     CompareAddress(u16),
+    CompareX,
+    CompareXAddress(u16),
+    CompareY,
+    CompareYAddress(u16),
     LoadAccPlaceholder,
     Break,
     ReadAccumulator,
@@ -1088,6 +1092,47 @@ impl Cpu {
                     InstType::Read,
                 )
             }
+            0xE0 => {
+                // CPX
+                VecDeque::from(vec![MicroOp::CompareX])
+            }
+            0xE4 => {
+                // CPX zero page
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPage,
+                    MicroOp::CompareX,
+                    InstType::Read,
+                )
+            }
+            0xEC => {
+                // CPX absolute
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::Absolute,
+                    MicroOp::CompareX,
+                    InstType::Read,
+                )
+            }
+            0xC0 => {
+                // CPY
+                VecDeque::from(vec![MicroOp::CompareY])
+            }
+            0xC4 => {
+                // CPY zero page
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPage,
+                    MicroOp::CompareY,
+                    InstType::Read,
+                )
+            }
+            0xCC => {
+                // CPY absolute
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::Absolute,
+                    MicroOp::CompareY,
+                    InstType::Read,
+                )
+            }
+
             0xE6 => {
                 // INC zero page
                 Cpu::dispatch_generic_instruction(
@@ -1255,6 +1300,22 @@ impl Cpu {
             }
             Some(MicroOp::Compare) => {
                 self.current_inst.push_front(MicroOp::CompareAddress(value));
+                if self.page_crossed {
+                    self.page_crossed = false;
+                    self.current_inst.push_front(MicroOp::DummyCycle);
+                }
+            }
+            Some(MicroOp::CompareX) => {
+                self.current_inst
+                    .push_front(MicroOp::CompareXAddress(value));
+                if self.page_crossed {
+                    self.page_crossed = false;
+                    self.current_inst.push_front(MicroOp::DummyCycle);
+                }
+            }
+            Some(MicroOp::CompareY) => {
+                self.current_inst
+                    .push_front(MicroOp::CompareYAddress(value));
                 if self.page_crossed {
                     self.page_crossed = false;
                     self.current_inst.push_front(MicroOp::DummyCycle);
@@ -1665,6 +1726,24 @@ impl Cpu {
             MicroOp::CompareAddress(address) => {
                 let value = self.mem_read(address);
                 self.compare(self.accumulator, value);
+            }
+            MicroOp::CompareX => {
+                let value = self.mem_read(self.pc);
+                self.pc += 1;
+                self.compare(self.index_x, value);
+            }
+            MicroOp::CompareXAddress(address) => {
+                let value = self.mem_read(address);
+                self.compare(self.index_x, value);
+            }
+            MicroOp::CompareY => {
+                let value = self.mem_read(self.pc);
+                self.pc += 1;
+                self.compare(self.index_y, value);
+            }
+            MicroOp::CompareYAddress(address) => {
+                let value = self.mem_read(address);
+                self.compare(self.index_y, value);
             }
             MicroOp::Break => {
                 //TODO: this op is more complex. research and implement.
