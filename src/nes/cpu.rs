@@ -8,6 +8,23 @@ const FLAG_NEGATIVE: u8 = 0b1000_0000;
 const FLAG_CARRY: u8 = 0b0000_0001;
 const FLAG_OVERFLOW: u8 = 0b0100_0000;
 
+enum AddressingMode {
+    ZeroPage,
+    ZeroPageX,
+    ZeroPageY,
+    Absolute,
+    AbsoluteX,
+    AbsoluteY,
+    IndexedIndirect,
+    IndirectIndexed,
+}
+
+enum InstType {
+    Read,
+    RMW,
+    Write,
+}
+
 #[derive(Debug)]
 pub enum MicroOp {
     ExclusiveOr,
@@ -23,14 +40,14 @@ pub enum MicroOp {
     LoadAccPlaceholder,
     Break,
     ReadAccumulator,
-    WriteAccumulatorToAddress,
-    WriteXtoAddress,
-    WriteYtoAddress,
-    LoadAccumulatorImmediate,
+    StoreAccumulator,
+    StoreX,
+    StoreY,
+    LoadAccumulator,
     LoadAccumulatorFromAddress(u16),
-    LoadXImmediate,
+    LoadX,
     LoadXfromAddress(u16),
-    LoadYImmediate,
+    LoadY,
     LoadYfromAddress(u16),
     FetchLowAddrByte,
     FetchHighAddrByte,
@@ -157,6 +174,167 @@ impl Cpu {
         }
     }
 
+    fn dispatch_generic_instruction(
+        address_mode: AddressingMode,
+        inst: MicroOp,
+        inst_type: InstType,
+    ) -> VecDeque<MicroOp> {
+        match address_mode {
+            AddressingMode::ZeroPage => match inst_type {
+                InstType::Read => VecDeque::from(vec![MicroOp::FetchZeroPage, inst]),
+                InstType::RMW => VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::ReadAddressPlaceholder,
+                    inst,
+                    MicroOp::WriteToAddressPlaceholder,
+                ]),
+                InstType::Write => VecDeque::from(vec![MicroOp::FetchZeroPage, inst]),
+            },
+            AddressingMode::ZeroPageX => match inst_type {
+                InstType::Read => VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::AddXtoZeroPageAddressPlaceholder,
+                    inst,
+                ]),
+                InstType::RMW => VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::AddXtoZeroPageAddressPlaceholder,
+                    MicroOp::ReadAddressPlaceholder,
+                    inst,
+                    MicroOp::WriteToAddressPlaceholder,
+                ]),
+                InstType::Write => VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::AddXtoZeroPageAddressPlaceholder,
+                    inst,
+                ]),
+            },
+            AddressingMode::ZeroPageY => match inst_type {
+                InstType::Read => VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::AddYtoZeroPageAddressPlaceholder,
+                    inst,
+                ]),
+                InstType::RMW => VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::AddYtoZeroPageAddressPlaceholder,
+                    MicroOp::ReadAddressPlaceholder,
+                    inst,
+                    MicroOp::WriteToAddressPlaceholder,
+                ]),
+                InstType::Write => VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::AddYtoZeroPageAddressPlaceholder,
+                    inst,
+                ]),
+            },
+            AddressingMode::Absolute => match inst_type {
+                InstType::Read => VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByte,
+                    inst,
+                ]),
+                InstType::RMW => VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByte,
+                    MicroOp::ReadAddressPlaceholder,
+                    inst,
+                    MicroOp::WriteToAddressPlaceholder,
+                ]),
+                InstType::Write => VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByte,
+                    inst,
+                ]),
+            },
+            AddressingMode::AbsoluteX => match inst_type {
+                InstType::Read => VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByteWithX, // might add dummy cycle
+                    inst,
+                ]),
+                InstType::RMW => VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByteWithX,
+                    MicroOp::FixAddressPlaceholder, // always happens with this instruction
+                    MicroOp::ReadAddressPlaceholder,
+                    inst,
+                    MicroOp::WriteToAddressPlaceholder,
+                ]),
+                InstType::Write => VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByteWithX,
+                    MicroOp::ReadAddressPlaceholder,
+                    inst,
+                ]),
+            },
+            AddressingMode::AbsoluteY => match inst_type {
+                InstType::Read => VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByteWithY, // might add dummy cycle
+                    inst,
+                ]),
+                InstType::RMW => VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByteWithY,
+                    MicroOp::FixAddressPlaceholder, // always happens with this instruction
+                    MicroOp::ReadAddressPlaceholder,
+                    inst,
+                    MicroOp::WriteToAddressPlaceholder,
+                ]),
+                InstType::Write => VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByteWithY,
+                    MicroOp::ReadAddressPlaceholder,
+                    inst,
+                ]),
+            },
+            AddressingMode::IndexedIndirect => match inst_type {
+                InstType::Read => VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::AddXtoPointerPlaceholder,
+                    MicroOp::FetchPointerBytePlaceholder, // will be 2 ops after processed
+                    inst,
+                ]),
+                InstType::RMW => VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::AddXtoPointerPlaceholder,
+                    MicroOp::FetchPointerBytePlaceholder,
+                    MicroOp::ReadAddressPlaceholder,
+                    inst,
+                    MicroOp::WriteToAddressPlaceholder,
+                ]),
+                InstType::Write => VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::AddXtoPointerPlaceholder,
+                    MicroOp::FetchPointerBytePlaceholder,
+                    inst,
+                ]),
+            },
+            AddressingMode::IndirectIndexed => match inst_type {
+                InstType::Read => VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::FetchPointerByteWithYPlaceholder, // may add dummy cycle
+                    inst,
+                ]),
+                InstType::RMW => VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::FetchPointerByteWithYPlaceholder,
+                    MicroOp::FixAddressPlaceholder,
+                    MicroOp::ReadAddressPlaceholder,
+                    inst,
+                    MicroOp::WriteToAddressPlaceholder,
+                ]),
+                InstType::Write => VecDeque::from(vec![
+                    MicroOp::FetchZeroPage,
+                    MicroOp::FetchPointerByteWithYPlaceholder,
+                    MicroOp::ReadAddressPlaceholder,
+                    inst,
+                ]),
+            },
+        }
+    }
+
     //TODO: might be redundant to have this and the self initializer. see load_program
     pub fn reset(&mut self) {
         self.accumulator = 0;
@@ -235,226 +413,239 @@ impl Cpu {
         match opcode {
             0xA9 => {
                 // LDA
-                VecDeque::from(vec![MicroOp::LoadAccumulatorImmediate])
+                VecDeque::from(vec![MicroOp::LoadAccumulator])
             }
             0xA5 => {
                 // LDA zero page
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::LoadAccumulatorImmediate,
-                ])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPage,
+                    MicroOp::LoadAccumulator,
+                    InstType::Read,
+                )
             }
             0xB5 => {
                 // LDA zero page + x
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::AddXtoZeroPageAddressPlaceholder,
-                    MicroOp::LoadAccumulatorImmediate,
-                ])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPageX,
+                    MicroOp::LoadAccumulator,
+                    InstType::Read,
+                )
             }
             0xAD => {
                 // LDA absolute
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByte,
-                    MicroOp::LoadAccumulatorImmediate,
-                ])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::Absolute,
+                    MicroOp::LoadAccumulator,
+                    InstType::Read,
+                )
             }
             0xBD => {
                 // LDA absolute + x
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByteWithX,
-                    MicroOp::LoadAccumulatorImmediate,
-                ])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::AbsoluteX,
+                    MicroOp::LoadAccumulator,
+                    InstType::Read,
+                )
             }
             0xB9 => {
                 // LDA absolute + y
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByteWithY,
-                    MicroOp::LoadAccumulatorImmediate,
-                ])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::AbsoluteY,
+                    MicroOp::LoadAccumulator,
+                    InstType::Read,
+                )
             }
             0xA1 => {
                 // LDA indexed indirect
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage, // does the same thing
-                    MicroOp::AddXtoPointerPlaceholder,
-                    MicroOp::FetchPointerBytePlaceholder, // will be 2 ops after processed
-                    MicroOp::LoadAccumulatorImmediate,
-                ])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::IndexedIndirect,
+                    MicroOp::LoadAccumulator,
+                    InstType::Read,
+                )
             }
             0xB1 => {
                 // LDA indirect indexed
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::FetchPointerByteWithYPlaceholder,
-                    MicroOp::LoadAccumulatorImmediate, // may add dummy cycle
-                ])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::IndirectIndexed,
+                    MicroOp::LoadAccumulator,
+                    InstType::Read,
+                )
             }
             0xA2 => {
                 // LDX
-                VecDeque::from(vec![MicroOp::LoadXImmediate])
+                VecDeque::from(vec![MicroOp::LoadX])
             }
             0xA6 => {
                 // LDX zero page
-                VecDeque::from(vec![MicroOp::FetchZeroPage, MicroOp::LoadXImmediate])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPage,
+                    MicroOp::LoadX,
+                    InstType::Read,
+                )
             }
             0xB6 => {
                 // LDX zero page + y
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::AddYtoZeroPageAddressPlaceholder,
-                    MicroOp::LoadXImmediate,
-                ])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPageY,
+                    MicroOp::LoadX,
+                    InstType::Read,
+                )
             }
             0xAE => {
                 // LDX absolute
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByte,
-                    MicroOp::LoadXImmediate,
-                ])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::Absolute,
+                    MicroOp::LoadX,
+                    InstType::Read,
+                )
             }
             0xBE => {
                 // LDX absolute + y
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByteWithY,
-                    MicroOp::LoadXImmediate,
-                ])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::AbsoluteY,
+                    MicroOp::LoadX,
+                    InstType::Read,
+                )
             }
             0xA0 => {
                 // LDY immediate
-                VecDeque::from(vec![MicroOp::LoadYImmediate])
+                VecDeque::from(vec![MicroOp::LoadY])
             }
             0xA4 => {
                 // LDY zero page
-                VecDeque::from(vec![MicroOp::FetchZeroPage, MicroOp::LoadYImmediate])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPage,
+                    MicroOp::LoadY,
+                    InstType::Read,
+                )
             }
             0xB4 => {
                 // LDY zero page + x
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::AddXtoZeroPageAddressPlaceholder,
-                    MicroOp::LoadYImmediate,
-                ])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPageY,
+                    MicroOp::LoadY,
+                    InstType::Read,
+                )
             }
             0xAC => {
                 // LDY absolute
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByte,
-                    MicroOp::LoadYImmediate,
-                ])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::Absolute,
+                    MicroOp::LoadY,
+                    InstType::Read,
+                )
             }
             0xBC => {
                 // LDY absolute + x
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByteWithX,
-                    MicroOp::LoadYImmediate,
-                ])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::AbsoluteX,
+                    MicroOp::LoadY,
+                    InstType::Read,
+                )
             }
             0x85 => {
                 // STA zero page
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::WriteAccumulatorToAddress,
-                ])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPage,
+                    MicroOp::StoreAccumulator,
+                    InstType::Write,
+                )
             }
             0x95 => {
                 // STA zero page + x
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::AddXtoZeroPageAddressPlaceholder,
-                    MicroOp::WriteAccumulatorToAddress,
-                ])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPageX,
+                    MicroOp::StoreAccumulator,
+                    InstType::Write,
+                )
             }
             0x8D => {
                 // STA absolute
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByte,
-                    MicroOp::WriteAccumulatorToAddress,
-                ])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::Absolute,
+                    MicroOp::StoreAccumulator,
+                    InstType::Write,
+                )
             }
             0x9D => {
                 // STA absolute + x
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByteWithX,
-                    MicroOp::ReadAddressPlaceholder,
-                    MicroOp::WriteAccumulatorToAddress,
-                ])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::AbsoluteX,
+                    MicroOp::StoreAccumulator,
+                    InstType::Write,
+                )
             }
             0x99 => {
                 // STA absolute + y
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByteWithY,
-                    MicroOp::ReadAddressPlaceholder,
-                    MicroOp::WriteAccumulatorToAddress,
-                ])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::AbsoluteY,
+                    MicroOp::StoreAccumulator,
+                    InstType::Write,
+                )
             }
             0x81 => {
                 // STA indexed indirect
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::AddXtoPointerPlaceholder,
-                    MicroOp::FetchPointerBytePlaceholder,
-                    MicroOp::WriteAccumulatorToAddress,
-                ])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::IndexedIndirect,
+                    MicroOp::StoreAccumulator,
+                    InstType::Write,
+                )
             }
             0x91 => {
                 //STA indirect indexed
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::FetchPointerByteWithYPlaceholder,
-                    MicroOp::ReadAddressPlaceholder,
-                    MicroOp::WriteAccumulatorToAddress,
-                ])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::IndirectIndexed,
+                    MicroOp::StoreAccumulator,
+                    InstType::Write,
+                )
             }
             0x86 => {
                 // STX zero page
-                VecDeque::from(vec![MicroOp::FetchZeroPage, MicroOp::WriteXtoAddress])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPage,
+                    MicroOp::StoreX,
+                    InstType::Write,
+                )
             }
             0x96 => {
                 // STX zero page + y
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::AddYtoZeroPageAddressPlaceholder,
-                    MicroOp::WriteXtoAddress,
-                ])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPageY,
+                    MicroOp::StoreX,
+                    InstType::Write,
+                )
             }
             0x8E => {
                 // STX absolute
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByte,
-                    MicroOp::WriteXtoAddress,
-                ])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::Absolute,
+                    MicroOp::StoreX,
+                    InstType::Write,
+                )
             }
             0x84 => {
                 // STY zero page
-                VecDeque::from(vec![MicroOp::FetchZeroPage, MicroOp::WriteYtoAddress])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPage,
+                    MicroOp::StoreY,
+                    InstType::Write,
+                )
             }
             0x94 => {
                 // STY zero page + x
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::AddXtoZeroPageAddressPlaceholder,
-                    MicroOp::WriteYtoAddress,
-                ])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPageX,
+                    MicroOp::StoreY,
+                    InstType::Write,
+                )
             }
             0x8C => {
                 // STY absolute
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByte,
-                    MicroOp::WriteYtoAddress,
-                ])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::Absolute,
+                    MicroOp::StoreY,
+                    InstType::Write,
+                )
             }
             0xAA => {
                 // TAX
@@ -513,56 +704,59 @@ impl Cpu {
             }
             0x25 => {
                 // AND zero page
-                VecDeque::from(vec![MicroOp::FetchZeroPage, MicroOp::LogicalAnd])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPage,
+                    MicroOp::LogicalAnd,
+                    InstType::Read,
+                )
             }
             0x35 => {
                 // AND zero page + x
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::AddXtoZeroPageAddressPlaceholder,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPageX,
                     MicroOp::LogicalAnd,
-                ])
+                    InstType::Read,
+                )
             }
             0x2D => {
                 // AND absolute
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByte,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::Absolute,
                     MicroOp::LogicalAnd,
-                ])
+                    InstType::Read,
+                )
             }
             0x3D => {
                 // AND absolute + x
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByteWithX,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::AbsoluteX,
                     MicroOp::LogicalAnd,
-                ])
+                    InstType::Read,
+                )
             }
             0x39 => {
                 // AND absolute + y
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByteWithY,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::AbsoluteY,
                     MicroOp::LogicalAnd,
-                ])
+                    InstType::Read,
+                )
             }
             0x21 => {
                 // AND indexed indirect
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::AddXtoPointerPlaceholder,
-                    MicroOp::FetchPointerBytePlaceholder,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::IndexedIndirect,
                     MicroOp::LogicalAnd,
-                ])
+                    InstType::Read,
+                )
             }
             0x31 => {
                 // AND indirect indexed
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::FetchPointerByteWithYPlaceholder,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::IndirectIndexed,
                     MicroOp::LogicalAnd,
-                ])
+                    InstType::Read,
+                )
             }
             0x49 => {
                 // EOR immediate
@@ -570,56 +764,59 @@ impl Cpu {
             }
             0x45 => {
                 // EOR zero page
-                VecDeque::from(vec![MicroOp::FetchZeroPage, MicroOp::ExclusiveOr])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPage,
+                    MicroOp::ExclusiveOr,
+                    InstType::Read,
+                )
             }
             0x55 => {
                 // EOR zero page + x
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::AddXtoZeroPageAddressPlaceholder,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPageX,
                     MicroOp::ExclusiveOr,
-                ])
+                    InstType::Read,
+                )
             }
             0x4D => {
                 // EOR absolute
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByte,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::Absolute,
                     MicroOp::ExclusiveOr,
-                ])
+                    InstType::Read,
+                )
             }
             0x5D => {
                 // EOR absolute + x
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByteWithX,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::AbsoluteX,
                     MicroOp::ExclusiveOr,
-                ])
+                    InstType::Read,
+                )
             }
             0x59 => {
                 // EOR absolute + y
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByteWithY,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::AbsoluteY,
                     MicroOp::ExclusiveOr,
-                ])
+                    InstType::Read,
+                )
             }
             0x41 => {
                 // EOR indexed indirect
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::AddXtoPointerPlaceholder,
-                    MicroOp::FetchPointerBytePlaceholder,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::IndexedIndirect,
                     MicroOp::ExclusiveOr,
-                ])
+                    InstType::Read,
+                )
             }
             0x51 => {
                 // EOR indirect indexed
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::FetchPointerByteWithYPlaceholder,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::IndirectIndexed,
                     MicroOp::ExclusiveOr,
-                ])
+                    InstType::Read,
+                )
             }
             0x09 => {
                 // ORA immediate
@@ -627,68 +824,75 @@ impl Cpu {
             }
             0x05 => {
                 // ORA zero page
-                VecDeque::from(vec![MicroOp::FetchZeroPage, MicroOp::InclusiveOr])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPage,
+                    MicroOp::InclusiveOr,
+                    InstType::Read,
+                )
             }
             0x15 => {
                 // ORA zero page + x
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::AddXtoZeroPageAddressPlaceholder,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPageX,
                     MicroOp::InclusiveOr,
-                ])
+                    InstType::Read,
+                )
             }
             0x0D => {
                 // ORA absolute
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByte,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::Absolute,
                     MicroOp::InclusiveOr,
-                ])
+                    InstType::Read,
+                )
             }
             0x1D => {
                 // ORA absolute + x
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByteWithX,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::AbsoluteX,
                     MicroOp::InclusiveOr,
-                ])
+                    InstType::Read,
+                )
             }
             0x19 => {
                 // ORA absolute + y
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByteWithY,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::AbsoluteY,
                     MicroOp::InclusiveOr,
-                ])
+                    InstType::Read,
+                )
             }
             0x01 => {
                 // ORA indexed indirect
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::AddXtoPointerPlaceholder,
-                    MicroOp::FetchPointerBytePlaceholder,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::IndexedIndirect,
                     MicroOp::InclusiveOr,
-                ])
+                    InstType::Read,
+                )
             }
             0x11 => {
                 // ORA indirect indexed
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::FetchPointerByteWithYPlaceholder,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::IndirectIndexed,
                     MicroOp::InclusiveOr,
-                ])
+                    InstType::Read,
+                )
             }
             0x24 => {
                 // BIT zero page
-                VecDeque::from(vec![MicroOp::FetchZeroPage, MicroOp::BitTestPlaceholder])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPage,
+                    MicroOp::BitTestPlaceholder,
+                    InstType::Read,
+                )
             }
             0x2C => {
                 // BIT absolute
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByte,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::Absolute,
                     MicroOp::BitTestPlaceholder,
-                ])
+                    InstType::Read,
+                )
             }
             0x69 => {
                 // ADC
@@ -696,96 +900,91 @@ impl Cpu {
             }
             0x65 => {
                 // ADC zero page
-                VecDeque::from(vec![MicroOp::FetchZeroPage, MicroOp::AddWithCarry])
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPage,
+                    MicroOp::AddWithCarry,
+                    InstType::Read,
+                )
             }
             0x75 => {
                 // ADC zero page + x
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::AddXtoZeroPageAddressPlaceholder,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPageX,
                     MicroOp::AddWithCarry,
-                ])
+                    InstType::Read,
+                )
             }
             0x6D => {
                 // ADC absolute
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByte,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::Absolute,
                     MicroOp::AddWithCarry,
-                ])
+                    InstType::Read,
+                )
             }
             0x7D => {
                 // ADC absolute + x
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByteWithX,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::AbsoluteX,
                     MicroOp::AddWithCarry,
-                ])
+                    InstType::Read,
+                )
             }
             0x79 => {
                 // ADC absolute + y
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByteWithY,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::AbsoluteY,
                     MicroOp::AddWithCarry,
-                ])
+                    InstType::Read,
+                )
             }
             0x61 => {
                 // ADC indexed indirect
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::AddXtoPointerPlaceholder,
-                    MicroOp::FetchPointerBytePlaceholder,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::IndexedIndirect,
                     MicroOp::AddWithCarry,
-                ])
+                    InstType::Read,
+                )
             }
             0x71 => {
                 // ADC indirect indexed
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::FetchPointerByteWithYPlaceholder,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::IndirectIndexed,
                     MicroOp::AddWithCarry,
-                ])
+                    InstType::Read,
+                )
             }
             0xE6 => {
                 // INC zero page
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::ReadAddressPlaceholder,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPage,
                     MicroOp::WriteBackAndIncrementPlaceholder,
-                    MicroOp::WriteToAddressPlaceholder,
-                ])
+                    InstType::RMW,
+                )
             }
             0xF6 => {
                 // INC zero page + x
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::AddXtoZeroPageAddressPlaceholder,
-                    MicroOp::ReadAddressPlaceholder,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPageX,
                     MicroOp::WriteBackAndIncrementPlaceholder,
-                    MicroOp::WriteToAddressPlaceholder,
-                ])
+                    InstType::RMW,
+                )
             }
             0xEE => {
                 // INC absolute
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByte,
-                    MicroOp::ReadAddressPlaceholder,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::Absolute,
                     MicroOp::WriteBackAndIncrementPlaceholder,
-                    MicroOp::WriteToAddressPlaceholder,
-                ])
+                    InstType::RMW,
+                )
             }
             0xFE => {
                 // INC absolute + x
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByteWithX,
-                    MicroOp::FixAddressPlaceholder, // always happens with this instruction
-                    MicroOp::ReadAddressPlaceholder,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::AbsoluteX,
                     MicroOp::WriteBackAndIncrementPlaceholder,
-                    MicroOp::WriteToAddressPlaceholder,
-                ])
+                    InstType::RMW,
+                )
             }
             0xE8 => {
                 // INX
@@ -805,43 +1004,35 @@ impl Cpu {
             }
             0xC6 => {
                 // DEC zero page
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::ReadAddressPlaceholder,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPage,
                     MicroOp::WriteBackAndDecrementPlaceholder,
-                    MicroOp::WriteToAddressPlaceholder,
-                ])
+                    InstType::RMW,
+                )
             }
             0xD6 => {
                 // DEC zero page + x
-                VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::AddXtoZeroPageAddressPlaceholder,
-                    MicroOp::ReadAddressPlaceholder,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPageX,
                     MicroOp::WriteBackAndDecrementPlaceholder,
-                    MicroOp::WriteToAddressPlaceholder,
-                ])
+                    InstType::RMW,
+                )
             }
             0xCE => {
                 // DEC absolute
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByte,
-                    MicroOp::ReadAddressPlaceholder,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::Absolute,
                     MicroOp::WriteBackAndDecrementPlaceholder,
-                    MicroOp::WriteToAddressPlaceholder,
-                ])
+                    InstType::RMW,
+                )
             }
             0xDE => {
                 // DEC absolute + x
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByteWithX,
-                    MicroOp::FixAddressPlaceholder, // always happens with this instruction
-                    MicroOp::ReadAddressPlaceholder,
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::AbsoluteX,
                     MicroOp::WriteBackAndDecrementPlaceholder,
-                    MicroOp::WriteToAddressPlaceholder,
-                ])
+                    InstType::RMW,
+                )
             }
             0x00 => {
                 // BRK
@@ -853,15 +1044,14 @@ impl Cpu {
 
     fn push_micro_from_placeholder(&mut self, value: u16) {
         match self.current_inst.pop_front() {
-            Some(MicroOp::WriteXtoAddress) => {
-                self.current_inst.push_front(MicroOp::WriteXtoAddress);
+            Some(MicroOp::StoreX) => {
+                self.current_inst.push_front(MicroOp::StoreX);
             }
-            Some(MicroOp::WriteYtoAddress) => {
-                self.current_inst.push_front(MicroOp::WriteYtoAddress);
+            Some(MicroOp::StoreY) => {
+                self.current_inst.push_front(MicroOp::StoreY);
             }
-            Some(MicroOp::WriteAccumulatorToAddress) => {
-                self.current_inst
-                    .push_front(MicroOp::WriteAccumulatorToAddress);
+            Some(MicroOp::StoreAccumulator) => {
+                self.current_inst.push_front(MicroOp::StoreAccumulator);
             }
             Some(MicroOp::WriteToAddressPlaceholder) => {
                 self.current_inst
@@ -878,7 +1068,7 @@ impl Cpu {
                 self.current_inst
                     .push_front(MicroOp::WriteBackAndDecrement(value as u8));
             }
-            Some(MicroOp::LoadAccumulatorImmediate) => {
+            Some(MicroOp::LoadAccumulator) => {
                 self.current_inst
                     .push_front(MicroOp::LoadAccumulatorFromAddress(value));
                 if self.page_crossed {
@@ -921,7 +1111,7 @@ impl Cpu {
                     self.current_inst.push_front(MicroOp::DummyCycle);
                 }
             }
-            Some(MicroOp::LoadXImmediate) => {
+            Some(MicroOp::LoadX) => {
                 self.current_inst
                     .push_front(MicroOp::LoadXfromAddress(value));
                 if self.page_crossed {
@@ -929,7 +1119,7 @@ impl Cpu {
                     self.current_inst.push_front(MicroOp::DummyCycle);
                 }
             }
-            Some(MicroOp::LoadYImmediate) => {
+            Some(MicroOp::LoadY) => {
                 self.current_inst
                     .push_front(MicroOp::LoadYfromAddress(value));
                 if self.page_crossed {
@@ -1040,7 +1230,7 @@ impl Cpu {
                 self.temp_addr = new_addr;
                 self.push_micro_from_placeholder(self.temp_addr);
             }
-            MicroOp::LoadAccumulatorImmediate => {
+            MicroOp::LoadAccumulator => {
                 let value = self.memory[self.pc as usize];
                 self.pc += 1;
                 self.accumulator = value;
@@ -1053,7 +1243,7 @@ impl Cpu {
 
                 self.set_flags_zero_neg(value);
             }
-            MicroOp::LoadXImmediate => {
+            MicroOp::LoadX => {
                 let value = self.memory[self.pc as usize];
                 self.pc += 1;
                 self.index_x = value;
@@ -1066,7 +1256,7 @@ impl Cpu {
 
                 self.set_flags_zero_neg(value);
             }
-            MicroOp::LoadYImmediate => {
+            MicroOp::LoadY => {
                 let value = self.memory[self.pc as usize];
                 self.pc += 1;
                 self.index_y = value;
@@ -1162,13 +1352,13 @@ impl Cpu {
 
                 self.set_flags_zero_neg(value);
             }
-            MicroOp::WriteAccumulatorToAddress => {
+            MicroOp::StoreAccumulator => {
                 self.mem_write(self.temp_addr, self.accumulator);
             }
-            MicroOp::WriteXtoAddress => {
+            MicroOp::StoreX => {
                 self.mem_write(self.temp_addr, self.index_x);
             }
-            MicroOp::WriteYtoAddress => {
+            MicroOp::StoreY => {
                 self.mem_write(self.temp_addr, self.index_y);
             }
             MicroOp::LogicalAnd => {
