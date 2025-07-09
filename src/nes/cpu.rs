@@ -39,6 +39,8 @@ pub enum MicroOp {
     AddWithCarryAddress(u16),
     SubWithCarry,
     SubWithCarryAddress(u16),
+    Compare,
+    CompareAddress(u16),
     LoadAccPlaceholder,
     Break,
     ReadAccumulator,
@@ -158,6 +160,16 @@ impl Cpu {
         let high_byte = (byte >> 8) as u8;
         self.mem_write(pos, low_byte);
         self.mem_write(pos + 1, high_byte);
+    }
+
+    fn compare(&mut self, a: u8, b: u8) {
+        let result = a.wrapping_sub(b);
+        self.set_flags_zero_neg(result);
+        if a >= b {
+            self.status_p |= FLAG_CARRY;
+        } else {
+            self.status_p &= !FLAG_CARRY;
+        }
     }
 
     fn set_flags_zero_neg(&mut self, value: u8) {
@@ -1016,6 +1028,66 @@ impl Cpu {
                     InstType::Read,
                 )
             }
+            0xC9 => {
+                // CMP
+                VecDeque::from(vec![MicroOp::Compare])
+            }
+            0xC5 => {
+                // CMP zero page
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPage,
+                    MicroOp::Compare,
+                    InstType::Read,
+                )
+            }
+            0xD5 => {
+                // CMP zero page + x
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPageX,
+                    MicroOp::Compare,
+                    InstType::Read,
+                )
+            }
+            0xCD => {
+                // CMP absolute
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::Absolute,
+                    MicroOp::Compare,
+                    InstType::Read,
+                )
+            }
+            0xDD => {
+                // CMP absolute + x
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::AbsoluteX,
+                    MicroOp::Compare,
+                    InstType::Read,
+                )
+            }
+            0xD9 => {
+                // CMP absolute + y
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::AbsoluteY,
+                    MicroOp::Compare,
+                    InstType::Read,
+                )
+            }
+            0xC1 => {
+                // CMP indexed indirect
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::IndexedIndirect,
+                    MicroOp::Compare,
+                    InstType::Read,
+                )
+            }
+            0xD1 => {
+                // CMP indirect indexed
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::IndirectIndexed,
+                    MicroOp::Compare,
+                    InstType::Read,
+                )
+            }
             0xE6 => {
                 // INC zero page
                 Cpu::dispatch_generic_instruction(
@@ -1176,6 +1248,13 @@ impl Cpu {
             Some(MicroOp::SubWithCarry) => {
                 self.current_inst
                     .push_front(MicroOp::SubWithCarryAddress(value));
+                if self.page_crossed {
+                    self.page_crossed = false;
+                    self.current_inst.push_front(MicroOp::DummyCycle);
+                }
+            }
+            Some(MicroOp::Compare) => {
+                self.current_inst.push_front(MicroOp::CompareAddress(value));
                 if self.page_crossed {
                     self.page_crossed = false;
                     self.current_inst.push_front(MicroOp::DummyCycle);
@@ -1577,6 +1656,15 @@ impl Cpu {
                     self.status_p &= !FLAG_OVERFLOW;
                 }
                 self.accumulator = result;
+            }
+            MicroOp::Compare => {
+                let value = self.mem_read(self.pc);
+                self.pc += 1;
+                self.compare(self.accumulator, value);
+            }
+            MicroOp::CompareAddress(address) => {
+                let value = self.mem_read(address);
+                self.compare(self.accumulator, value);
             }
             MicroOp::Break => {
                 //TODO: this op is more complex. research and implement.

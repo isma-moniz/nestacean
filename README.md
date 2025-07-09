@@ -33,7 +33,7 @@ This is a WIP. I had the brilliant idea to make a cicle accurate emulator :D so 
 - [x] BIT 
 - [x] ADC
 - [x] SBC
-- [ ] CMP
+- [x] CMP
 - [ ] CPX
 - [ ] CPY
 - [ ] ASL
