@@ -37,6 +37,8 @@ pub enum MicroOp {
     BitTest(u16),
     AddWithCarry,
     AddWithCarryAddress(u16),
+    SubWithCarry,
+    SubWithCarryAddress(u16),
     LoadAccPlaceholder,
     Break,
     ReadAccumulator,
@@ -954,6 +956,66 @@ impl Cpu {
                     InstType::Read,
                 )
             }
+            0xE9 => {
+                // SBC
+                VecDeque::from(vec![MicroOp::SubWithCarry])
+            }
+            0xE5 => {
+                // SBC zero page
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPage,
+                    MicroOp::SubWithCarry,
+                    InstType::Read,
+                )
+            }
+            0xF5 => {
+                // SBC zero page + x
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPageX,
+                    MicroOp::SubWithCarry,
+                    InstType::Read,
+                )
+            }
+            0xED => {
+                // SBC absolute
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::Absolute,
+                    MicroOp::SubWithCarry,
+                    InstType::Read,
+                )
+            }
+            0xFD => {
+                // SBC absolute + x
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::AbsoluteX,
+                    MicroOp::SubWithCarry,
+                    InstType::Read,
+                )
+            }
+            0xF9 => {
+                // SBC absolute + y
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::AbsoluteY,
+                    MicroOp::SubWithCarry,
+                    InstType::Read,
+                )
+            }
+            0xE1 => {
+                // SBC indexed indirect
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::IndexedIndirect,
+                    MicroOp::SubWithCarry,
+                    InstType::Read,
+                )
+            }
+            0xF1 => {
+                // SBC indirect indexed
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::IndirectIndexed,
+                    MicroOp::SubWithCarry,
+                    InstType::Read,
+                )
+            }
             0xE6 => {
                 // INC zero page
                 Cpu::dispatch_generic_instruction(
@@ -1106,6 +1168,14 @@ impl Cpu {
             Some(MicroOp::AddWithCarry) => {
                 self.current_inst
                     .push_front(MicroOp::AddWithCarryAddress(value));
+                if self.page_crossed {
+                    self.page_crossed = false;
+                    self.current_inst.push_front(MicroOp::DummyCycle);
+                }
+            }
+            Some(MicroOp::SubWithCarry) => {
+                self.current_inst
+                    .push_front(MicroOp::SubWithCarryAddress(value));
                 if self.page_crossed {
                     self.page_crossed = false;
                     self.current_inst.push_front(MicroOp::DummyCycle);
@@ -1456,6 +1526,51 @@ impl Cpu {
                     self.status_p &= !FLAG_CARRY;
                 }
                 self.set_flags_zero_neg(result);
+                if ((self.accumulator ^ result) & (value ^ result) & 0x80) != 0 {
+                    self.status_p |= FLAG_OVERFLOW;
+                } else {
+                    self.status_p &= !FLAG_OVERFLOW;
+                }
+                self.accumulator = result;
+            }
+            MicroOp::SubWithCarry => {
+                let value = self.mem_read(self.pc);
+                self.pc += 1;
+                let carry_in: u16 = if self.status_p & FLAG_CARRY != 0 {
+                    1
+                } else {
+                    0
+                };
+                let sub = self.accumulator as u16 - value as u16 - !carry_in;
+                let result = sub as u8;
+                self.set_flags_zero_neg(result);
+                if sub > 0xFF {
+                    self.status_p &= !FLAG_CARRY;
+                } else {
+                    self.status_p |= FLAG_CARRY;
+                }
+                if ((self.accumulator ^ result) & (value ^ result) & 0x80) != 0 {
+                    self.status_p |= FLAG_OVERFLOW;
+                } else {
+                    self.status_p &= !FLAG_OVERFLOW;
+                }
+                self.accumulator = result;
+            }
+            MicroOp::SubWithCarryAddress(address) => {
+                let value = self.mem_read(address);
+                let carry_in: u16 = if self.status_p & FLAG_CARRY != 0 {
+                    1
+                } else {
+                    0
+                };
+                let sub = self.accumulator as u16 - value as u16 - !carry_in;
+                let result = sub as u8;
+                self.set_flags_zero_neg(result);
+                if sub > 0xFF {
+                    self.status_p &= !FLAG_CARRY;
+                } else {
+                    self.status_p |= FLAG_CARRY;
+                }
                 if ((self.accumulator ^ result) & (value ^ result) & 0x80) != 0 {
                     self.status_p |= FLAG_OVERFLOW;
                 } else {
