@@ -91,6 +91,8 @@ pub enum MicroOp {
     PushStatus,
     PullAccumulator,
     PullStatus,
+    PushPCH,
+    PushPCL,
     IncrementSP(u8),
     IncrementX,
     IncrementY,
@@ -1430,6 +1432,17 @@ impl Cpu {
                     MicroOp::ReadHighFromIndirectPlaceholder,
                 ])
             }
+            0x20 => {
+                // JSR
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::DummyCycle, //TODO: this isn't actually performing a dummy read. see
+                    //if it brings problems.
+                    MicroOp::PushPCH,
+                    MicroOp::PushPCL,
+                    MicroOp::CopyLowFetchHightoPC,
+                ])
+            }
             0x00 => {
                 // BRK
                 VecDeque::from(vec![MicroOp::Break])
@@ -1771,6 +1784,18 @@ impl Cpu {
             MicroOp::PushStatus => {
                 let address: u16 = 0x0100 + self.sp as u16;
                 self.mem_write(address, self.status_p);
+                self.sp = self.sp.wrapping_sub(1);
+            }
+            MicroOp::PushPCH => {
+                let address = 0x0100 + self.sp as u16;
+                let pch: u8 = (self.pc >> 8) as u8;
+                self.mem_write(address, pch);
+                self.sp = self.sp.wrapping_sub(1);
+            }
+            MicroOp::PushPCL => {
+                let address = 0x0100 + self.sp as u16;
+                let pcl = self.pc as u8;
+                self.mem_write(address, pcl);
                 self.sp = self.sp.wrapping_sub(1);
             }
             MicroOp::IncrementSP(value) => {

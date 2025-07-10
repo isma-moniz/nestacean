@@ -41,7 +41,7 @@ This is a WIP. I had the brilliant idea to make a cicle accurate emulator :D so 
 - [x] ROL
 - [x] ROR
 - [x] JMP
-- [ ] JSR
+- [x] JSR
 - [ ] RTS
 - [ ] BCC
 - [ ] BCS
