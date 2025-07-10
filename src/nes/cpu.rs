@@ -67,6 +67,7 @@ pub enum MicroOp {
     LoadYfromAddress(u16),
     FetchLowAddrByte,
     FetchHighAddrByte,
+    CopyLowFetchHightoPC,
     FetchHighAddrByteWithX,
     FetchHighAddrByteWithY,
     AddXtoAddressPlaceholder,
@@ -106,6 +107,9 @@ pub enum MicroOp {
     FetchPointerLowByte(u8),
     FetchPointerHighByte(u8),
     FetchPointerHighByteWithY(u8),
+    ReadHighFromIndirectPlaceholder,
+    ReadHighFromIndirectLatch(u8),
+    ReadLowFromIndirect,
     ReadAddressPlaceholder,
     ReadAddress(u16),
     WriteBackAndIncrementPlaceholder,
@@ -1410,6 +1414,22 @@ impl Cpu {
                     InstType::RMW,
                 )
             }
+            0x4C => {
+                // JMP absolute
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::CopyLowFetchHightoPC,
+                ])
+            }
+            0x6C => {
+                // JMP indirect
+                VecDeque::from(vec![
+                    MicroOp::FetchLowAddrByte,
+                    MicroOp::FetchHighAddrByte,
+                    MicroOp::ReadLowFromIndirect,
+                    MicroOp::ReadHighFromIndirectPlaceholder,
+                ])
+            }
             0x00 => {
                 // BRK
                 VecDeque::from(vec![MicroOp::Break])
@@ -1436,6 +1456,9 @@ impl Cpu {
             Some(MicroOp::ReadAddressPlaceholder) => {
                 self.current_inst.push_front(MicroOp::ReadAddress(value));
             }
+            Some(MicroOp::ReadLowFromIndirect) => {
+                self.current_inst.push_front(MicroOp::ReadLowFromIndirect);
+            }
             Some(MicroOp::WriteBackAndIncrementPlaceholder) => {
                 self.current_inst
                     .push_front(MicroOp::WriteBackAndIncrement(value as u8));
@@ -1443,6 +1466,10 @@ impl Cpu {
             Some(MicroOp::WriteBackAndDecrementPlaceholder) => {
                 self.current_inst
                     .push_front(MicroOp::WriteBackAndDecrement(value as u8));
+            }
+            Some(MicroOp::ReadHighFromIndirectPlaceholder) => {
+                self.current_inst
+                    .push_front(MicroOp::ReadHighFromIndirectLatch(value as u8));
             }
             Some(MicroOp::LoadAccumulator) => {
                 self.current_inst
@@ -1622,6 +1649,25 @@ impl Cpu {
                 self.temp_addr |= (self.mem_read(self.pc) as u16) << 8;
                 self.pc += 1;
                 self.push_micro_from_placeholder(self.temp_addr);
+            }
+            MicroOp::CopyLowFetchHightoPC => {
+                let high_byte = (self.mem_read(self.pc) as u16) << 8;
+                self.pc += 1;
+                self.pc = high_byte | self.temp_addr;
+            }
+            MicroOp::ReadLowFromIndirect => {
+                let latch = self.mem_read(self.temp_addr);
+                self.push_micro_from_placeholder(latch as u16);
+            }
+            MicroOp::ReadHighFromIndirectLatch(latch) => {
+                // simulates 6502 page wraparound bug
+                let high_addr = if latch == 0xFF {
+                    self.temp_addr & 0xFF00
+                } else {
+                    self.temp_addr + 1
+                };
+                let high_byte = (self.mem_read(high_addr) as u16) << 8;
+                self.pc = high_byte | latch as u16;
             }
             MicroOp::FetchHighAddrByteWithX => {
                 self.temp_addr |= (self.mem_read(self.pc) as u16) << 8;
