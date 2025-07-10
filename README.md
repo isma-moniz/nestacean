@@ -37,7 +37,7 @@ This is a WIP. I had the brilliant idea to make a cicle accurate emulator :D so 
 - [x] CPX
 - [x] CPY
 - [x] ASL
-- [ ] LSR
+- [x] LSR
 - [ ] ROL
 - [ ] ROR
 - [ ] JMP

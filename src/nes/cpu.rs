@@ -47,6 +47,8 @@ pub enum MicroOp {
     CompareYAddress(u16),
     ArithmeticShiftLeft,
     ArithmeticShiftLeftAddress(u16),
+    LogicalShiftRight,
+    LogicalShiftRightAddress(u16),
     LoadAccPlaceholder,
     Break,
     ReadAccumulator,
@@ -185,6 +187,17 @@ impl Cpu {
             self.status_p &= !FLAG_CARRY;
         }
         let result = value << 1;
+        self.set_flags_zero_neg(result);
+        result
+    }
+
+    fn lsr(&mut self, value: u8) -> u8 {
+        if value & FLAG_CARRY != 0 {
+            self.status_p |= FLAG_CARRY;
+        } else {
+            self.status_p &= !FLAG_CARRY;
+        }
+        let result = value >> 1;
         self.set_flags_zero_neg(result);
         result
     }
@@ -1181,6 +1194,42 @@ impl Cpu {
                     InstType::RMW,
                 )
             }
+            0x4A => {
+                // LSR
+                VecDeque::from(vec![MicroOp::LogicalShiftRight])
+            }
+            0x46 => {
+                // LSR zero page
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPage,
+                    MicroOp::LogicalShiftRight,
+                    InstType::RMW,
+                )
+            }
+            0x56 => {
+                // LSR zero page + x
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPageX,
+                    MicroOp::LogicalShiftRight,
+                    InstType::RMW,
+                )
+            }
+            0x4E => {
+                // LSR absolute
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::Absolute,
+                    MicroOp::LogicalShiftRight,
+                    InstType::RMW,
+                )
+            }
+            0x5E => {
+                // LSR absolute + x
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::AbsoluteX,
+                    MicroOp::LogicalShiftRight,
+                    InstType::RMW,
+                )
+            }
             0xE6 => {
                 // INC zero page
                 Cpu::dispatch_generic_instruction(
@@ -1372,6 +1421,10 @@ impl Cpu {
             Some(MicroOp::ArithmeticShiftLeft) => {
                 self.current_inst
                     .push_front(MicroOp::ArithmeticShiftLeftAddress(value));
+            }
+            Some(MicroOp::LogicalShiftRight) => {
+                self.current_inst
+                    .push_front(MicroOp::LogicalShiftRightAddress(value));
             }
             Some(MicroOp::LoadX) => {
                 self.current_inst
@@ -1803,6 +1856,14 @@ impl Cpu {
             MicroOp::ArithmeticShiftLeftAddress(address) => {
                 let value = self.mem_read(address);
                 let result = self.asl(value);
+                self.mem_write(address, result);
+            }
+            MicroOp::LogicalShiftRight => {
+                self.accumulator = self.lsr(self.accumulator);
+            }
+            MicroOp::LogicalShiftRightAddress(address) => {
+                let value = self.mem_read(address);
+                let result = self.lsr(value);
                 self.mem_write(address, result);
             }
             MicroOp::Break => {
