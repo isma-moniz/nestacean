@@ -49,6 +49,10 @@ pub enum MicroOp {
     ArithmeticShiftLeftAddress(u16),
     LogicalShiftRight,
     LogicalShiftRightAddress(u16),
+    RotateLeft,
+    RotateLeftAddress(u16),
+    RotateRight,
+    RotateRightAddress(u16),
     LoadAccPlaceholder,
     Break,
     ReadAccumulator,
@@ -198,6 +202,30 @@ impl Cpu {
             self.status_p &= !FLAG_CARRY;
         }
         let result = value >> 1;
+        self.set_flags_zero_neg(result);
+        result
+    }
+
+    fn rol(&mut self, value: u8) -> u8 {
+        let carry = self.status_p & FLAG_CARRY;
+        let result = (value << 1) | carry;
+        if value & FLAG_NEGATIVE != 0 {
+            self.status_p |= FLAG_CARRY;
+        } else {
+            self.status_p &= !FLAG_CARRY;
+        }
+        self.set_flags_zero_neg(result);
+        result
+    }
+
+    fn ror(&mut self, value: u8) -> u8 {
+        let carry = self.status_p & FLAG_CARRY;
+        let result = (value >> 1) | (carry << 7);
+        if value & FLAG_CARRY != 0 {
+            self.status_p |= FLAG_CARRY;
+        } else {
+            self.status_p &= !FLAG_CARRY;
+        }
         self.set_flags_zero_neg(result);
         result
     }
@@ -1230,6 +1258,78 @@ impl Cpu {
                     InstType::RMW,
                 )
             }
+            0x2A => {
+                // ROL
+                VecDeque::from(vec![MicroOp::RotateLeft])
+            }
+            0x26 => {
+                // ROL zero page
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPage,
+                    MicroOp::RotateLeft,
+                    InstType::RMW,
+                )
+            }
+            0x36 => {
+                // ROL zero page + x
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPageX,
+                    MicroOp::RotateLeft,
+                    InstType::RMW,
+                )
+            }
+            0x2E => {
+                // ROL absolute
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::Absolute,
+                    MicroOp::RotateLeft,
+                    InstType::RMW,
+                )
+            }
+            0x3E => {
+                // ROL absolute + x
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::AbsoluteX,
+                    MicroOp::RotateLeft,
+                    InstType::RMW,
+                )
+            }
+            0x6A => {
+                // ROR
+                VecDeque::from(vec![MicroOp::RotateRight])
+            }
+            0x66 => {
+                // ROR zero page
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPage,
+                    MicroOp::RotateRight,
+                    InstType::RMW,
+                )
+            }
+            0x76 => {
+                // ROR zero page + x
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::ZeroPageX,
+                    MicroOp::RotateRight,
+                    InstType::RMW,
+                )
+            }
+            0x6E => {
+                // ROR absolute
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::Absolute,
+                    MicroOp::RotateRight,
+                    InstType::RMW,
+                )
+            }
+            0x7E => {
+                // ROR absolute + x
+                Cpu::dispatch_generic_instruction(
+                    AddressingMode::AbsoluteX,
+                    MicroOp::RotateRight,
+                    InstType::RMW,
+                )
+            }
             0xE6 => {
                 // INC zero page
                 Cpu::dispatch_generic_instruction(
@@ -1425,6 +1525,14 @@ impl Cpu {
             Some(MicroOp::LogicalShiftRight) => {
                 self.current_inst
                     .push_front(MicroOp::LogicalShiftRightAddress(value));
+            }
+            Some(MicroOp::RotateLeft) => {
+                self.current_inst
+                    .push_front(MicroOp::RotateLeftAddress(value));
+            }
+            Some(MicroOp::RotateRight) => {
+                self.current_inst
+                    .push_front(MicroOp::RotateRightAddress(value));
             }
             Some(MicroOp::LoadX) => {
                 self.current_inst
@@ -1864,6 +1972,22 @@ impl Cpu {
             MicroOp::LogicalShiftRightAddress(address) => {
                 let value = self.mem_read(address);
                 let result = self.lsr(value);
+                self.mem_write(address, result);
+            }
+            MicroOp::RotateLeft => {
+                self.accumulator = self.rol(self.accumulator);
+            }
+            MicroOp::RotateLeftAddress(address) => {
+                let value = self.mem_read(address);
+                let result = self.rol(value);
+                self.mem_write(address, result);
+            }
+            MicroOp::RotateRight => {
+                self.accumulator = self.ror(self.accumulator);
+            }
+            MicroOp::RotateRightAddress(address) => {
+                let value = self.mem_read(address);
+                let result = self.ror(value);
                 self.mem_write(address, result);
             }
             MicroOp::Break => {

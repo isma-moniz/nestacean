@@ -38,8 +38,8 @@ This is a WIP. I had the brilliant idea to make a cicle accurate emulator :D so 
 - [x] CPY
 - [x] ASL
 - [x] LSR
-- [ ] ROL
-- [ ] ROR
+- [x] ROL
+- [x] ROR
 - [ ] JMP
 - [ ] JSR
 - [ ] RTS
