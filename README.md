@@ -42,7 +42,7 @@ This is a WIP. I had the brilliant idea to make a cicle accurate emulator :D so 
 - [x] ROR
 - [x] JMP
 - [x] JSR
-- [ ] RTS
+- [x] RTS
 - [ ] BCC
 - [ ] BCS
 - [ ] BEQ

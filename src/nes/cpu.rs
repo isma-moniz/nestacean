@@ -93,6 +93,11 @@ pub enum MicroOp {
     PullStatus,
     PushPCH,
     PushPCL,
+    PullPCL,
+    PullPCHPlaceholder,
+    PullPCH(u16),
+    IncrementPCPlaceholder,
+    IncrementPC(u16),
     IncrementSP(u8),
     IncrementX,
     IncrementY,
@@ -1443,6 +1448,16 @@ impl Cpu {
                     MicroOp::CopyLowFetchHightoPC,
                 ])
             }
+            0x60 => {
+                // RTS
+                VecDeque::from(vec![
+                    MicroOp::DummyCycle,
+                    MicroOp::IncrementSP(1),
+                    MicroOp::PullPCL,
+                    MicroOp::PullPCHPlaceholder,
+                    MicroOp::IncrementPCPlaceholder,
+                ])
+            }
             0x00 => {
                 // BRK
                 VecDeque::from(vec![MicroOp::Break])
@@ -1619,6 +1634,12 @@ impl Cpu {
             }
             Some(MicroOp::FixAddressPlaceholder) => {
                 self.current_inst.push_front(MicroOp::FixAddress(value));
+            }
+            Some(MicroOp::PullPCHPlaceholder) => {
+                self.current_inst.push_front(MicroOp::PullPCH(value));
+            }
+            Some(MicroOp::IncrementPCPlaceholder) => {
+                self.current_inst.push_front(MicroOp::IncrementPC(value));
             }
             Some(other) => panic!("Unexpected micro-op: {:?}", other),
             None => panic!("No micro-op!"),
@@ -1797,6 +1818,21 @@ impl Cpu {
                 let pcl = self.pc as u8;
                 self.mem_write(address, pcl);
                 self.sp = self.sp.wrapping_sub(1);
+            }
+            MicroOp::PullPCL => {
+                let address = 0x0100 + self.sp as u16;
+                let pcl = self.mem_read(address);
+                self.sp = self.sp.wrapping_add(1);
+                self.push_micro_from_placeholder(pcl as u16);
+            }
+            MicroOp::PullPCH(pcl) => {
+                let address = 0x0100 + self.sp as u16;
+                let pch = (self.mem_read(address) as u16) << 8;
+                let pc = pch | pcl;
+                self.push_micro_from_placeholder(pc);
+            }
+            MicroOp::IncrementPC(pc) => {
+                self.pc = pc + 1;
             }
             MicroOp::IncrementSP(value) => {
                 self.sp = self.sp.wrapping_add(value);
