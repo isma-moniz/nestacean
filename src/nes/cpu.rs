@@ -7,6 +7,11 @@ const FLAG_ZERO: u8 = 0b0000_0010;
 const FLAG_NEGATIVE: u8 = 0b1000_0000;
 const FLAG_CARRY: u8 = 0b0000_0001;
 const FLAG_OVERFLOW: u8 = 0b0100_0000;
+const BIT_7: u8 = 0b1000_0000;
+const STACK_PTR_TOP: u8 = 0xFF;
+const STACK_BOTTOM: u16 = 0x0100;
+const PROGRAM_START: u16 = 0x8000;
+const PC_INIT_LOCATION: u16 = 0xFFFC;
 
 enum AddressingMode {
     ZeroPage,
@@ -180,9 +185,9 @@ impl Cpu {
         self.memory[pos as usize] = byte;
     }
 
-    pub fn mem_write_u16(&mut self, pos: u16, byte: u16) {
-        let low_byte = (byte & 0xFF) as u8;
-        let high_byte = (byte >> 8) as u8;
+    pub fn mem_write_u16(&mut self, pos: u16, bytes: u16) {
+        let low_byte = (bytes & 0xFF) as u8;
+        let high_byte = (bytes >> 8) as u8;
         self.mem_write(pos, low_byte);
         self.mem_write(pos + 1, high_byte);
     }
@@ -258,7 +263,7 @@ impl Cpu {
         }
 
         // set negative flag
-        if value & 0b1000_0000 != 0 {
+        if value & BIT_7 != 0 {
             self.status_p |= FLAG_NEGATIVE;
         } else {
             self.status_p &= !FLAG_NEGATIVE;
@@ -431,17 +436,17 @@ impl Cpu {
         self.accumulator = 0;
         self.index_x = 0;
         self.index_y = 0;
-        self.sp = 0xFF; // TOP OF THE STACK! goes from 0x0100 to 0x01FF.
+        self.sp = STACK_PTR_TOP;
         self.status_p = 0;
         self.temp_addr = 0;
         self.page_crossed = false;
         self.current_inst = VecDeque::new();
-        self.pc = self.mem_read_u16(0xFFFC);
+        self.pc = self.mem_read_u16(PC_INIT_LOCATION);
     }
 
     pub fn load_program(&mut self, program: &[u8]) {
-        self.memory[0x8000..(0x8000 + program.len())].copy_from_slice(&program[..]);
-        self.mem_write_u16(0xFFFC, 0x8000); // why not load the pc directly?
+        self.memory[PROGRAM_START as usize..(PROGRAM_START as usize + program.len())].copy_from_slice(&program[..]);
+        self.mem_write_u16(PC_INIT_LOCATION, PROGRAM_START); // why not load the pc directly?
     }
 
     pub fn tick(&mut self) {
