@@ -27,6 +27,7 @@ enum InstType {
 
 #[derive(Debug)]
 pub enum MicroOp {
+    TakeBranch(u8),
     ExclusiveOr,
     ExclusiveOrAddress(u16),
     LogicalAnd,
@@ -81,6 +82,7 @@ pub enum MicroOp {
     AddYLoadImmediatePlaceholder,
     AddYLoadImmediate(u16),
     FetchZeroPage,
+    FetchRelativeOffset(u8),
     LoadXAccumulator,
     LoadYAccumulator,
     LoadXStackPointer,
@@ -239,6 +241,12 @@ impl Cpu {
         }
         self.set_flags_zero_neg(result);
         result
+    }
+
+    fn schedule_branch(&mut self, value: u8, cond: u8, offset: u8) {
+        if value == cond {
+            self.current_inst.push_back(MicroOp::TakeBranch(offset));
+        }
     }
 
     fn set_flags_zero_neg(&mut self, value: u8) {
@@ -1458,6 +1466,12 @@ impl Cpu {
                     MicroOp::IncrementPCPlaceholder,
                 ])
             }
+            0x90 => {
+                // BCC
+                VecDeque::from(vec![
+                    MicroOp::FetchRelativeOffset(self.status_p & FLAG_CARRY),
+                ])
+            }
             0x00 => {
                 // BRK
                 VecDeque::from(vec![MicroOp::Break])
@@ -1732,6 +1746,20 @@ impl Cpu {
                 self.page_crossed = (self.temp_addr & 0xFF00) != (new_addr & 0xFF00);
                 self.temp_addr = new_addr;
                 self.push_micro_from_placeholder(self.temp_addr);
+            }
+            MicroOp::FetchRelativeOffset(value) => {
+                let offset = self.mem_read(self.pc);
+                self.pc += 1;
+                self.schedule_branch(value, 0x00, offset);
+            }
+            MicroOp::TakeBranch(offset) => {
+                let new_addr = self.pc.wrapping_add(offset as u16);
+                self.page_crossed = (self.pc & 0xFF00) != (new_addr & 0xFF00);
+                if self.page_crossed {
+                    self.page_crossed = false;
+                    self.current_inst.push_front(MicroOp::DummyCycle); // this is added after the pc getting updated. shouldn't be a problem but beware.
+                }
+                self.pc = new_addr;
             }
             MicroOp::LoadAccumulator => {
                 let value = self.memory[self.pc as usize];
