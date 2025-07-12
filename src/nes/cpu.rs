@@ -82,7 +82,7 @@ pub enum MicroOp {
     AddYLoadImmediatePlaceholder,
     AddYLoadImmediate(u16),
     FetchZeroPage,
-    FetchRelativeOffset(u8),
+    FetchRelativeOffset(u8, u8),
     LoadXAccumulator,
     LoadYAccumulator,
     LoadXStackPointer,
@@ -1523,6 +1523,56 @@ impl Cpu {
                 // BCC
                 VecDeque::from(vec![MicroOp::FetchRelativeOffset(
                     self.status_p & FLAG_CARRY,
+                    0x00
+                )])
+            }
+            0xB0 => {
+                // BCS
+                VecDeque::from(vec![MicroOp::FetchRelativeOffset(
+                    self.status_p & FLAG_CARRY,
+                    FLAG_CARRY
+                )])
+            }
+            0xF0 => {
+                // BEQ
+                VecDeque::from(vec![MicroOp::FetchRelativeOffset(
+                    self.status_p & FLAG_ZERO,
+                    FLAG_ZERO
+                )])
+            }
+            0xD0 => {
+                // BNE
+                VecDeque::from(vec![MicroOp::FetchRelativeOffset(
+                    self.status_p & FLAG_ZERO,
+                    0x00
+                )])
+            }
+            0x30 => {
+                // BMI
+                VecDeque::from(vec![MicroOp::FetchRelativeOffset(
+                    self.status_p & FLAG_NEGATIVE,
+                    FLAG_NEGATIVE
+                )])
+            }
+            0x10 => {
+                // BPL
+                VecDeque::from(vec![MicroOp::FetchRelativeOffset(
+                    self.status_p & FLAG_NEGATIVE,
+                    0x00
+                )])
+            }
+            0x50 => {
+                // BVC
+                VecDeque::from(vec![MicroOp::FetchRelativeOffset(
+                    self.status_p & FLAG_OVERFLOW,
+                    0x00
+                )])
+            }
+            0x70 => {
+                // BVS
+                VecDeque::from(vec![MicroOp::FetchRelativeOffset(
+                    self.status_p & FLAG_OVERFLOW,
+                    FLAG_OVERFLOW
                 )])
             }
             0x00 => {
@@ -1761,14 +1811,14 @@ impl Cpu {
                     let new_addr = self.temp_addr.wrapping_add(self.index_y as u16);
                     self.page_crossed = (self.temp_addr & 0xFF00) != (new_addr & 0xFF00);
                     self.temp_addr = new_addr;
-                    self.push_micro_from_placeholder(Some(self.temp_addr));
+                    self.push_micro_from_placeholder(None);
                 }
                 None => panic!("Expected pointer value in FetchPointerHighByteWithY"),
             },
-            MicroOp::FetchRelativeOffset(value) => {
+            MicroOp::FetchRelativeOffset(value, cond) => {
                 let offset = self.mem_read(self.pc);
                 self.pc += 1;
-                self.schedule_branch(value, 0x00, offset);
+                self.schedule_branch(value, cond, offset);
             }
             MicroOp::TakeBranch(offset) => {
                 let new_addr = self.pc.wrapping_add(offset as u16);
