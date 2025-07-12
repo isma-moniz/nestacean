@@ -44,19 +44,19 @@ This is a WIP. I had the brilliant idea to make a cicle accurate emulator :D so 
 - [x] JSR
 - [x] RTS
 - [x] BCC
-- [ ] BCS
-- [ ] BEQ
-- [ ] BMI
-- [ ] BNE
-- [ ] BPL
-- [ ] BVC
-- [ ] BVS
-- [ ] CLC
-- [ ] CLD
-- [ ] CLI
-- [ ] CLV
-- [ ] SEC
-- [ ] SED
-- [ ] SEI
-- [ ] NOP
+- [x] BCS
+- [x] BEQ
+- [x] BMI
+- [x] BNE
+- [x] BPL
+- [x] BVC
+- [x] BVS
+- [x] CLC
+- [x] CLD
+- [x] CLI
+- [x] CLV
+- [x] SEC
+- [x] SED
+- [x] SEI
+- [x] NOP
 - [ ] RTI
