@@ -47,17 +47,17 @@ pub enum MicroOp {
     Compare,
     CompareAddress,
     CompareX,
-    CompareXAddress(u16),
+    CompareXAddress,
     CompareY,
-    CompareYAddress(u16),
+    CompareYAddress,
     ArithmeticShiftLeft,
     ArithmeticShiftLeftAddress(Option<u16>),
     LogicalShiftRight,
-    LogicalShiftRightAddress(u16),
+    LogicalShiftRightAddress(Option<u16>),
     RotateLeft,
-    RotateLeftAddress(u16),
+    RotateLeftAddress(Option<u16>),
     RotateRight,
-    RotateRightAddress(u16),
+    RotateRightAddress(Option<u16>),
     LoadAccPlaceholder,
     Break,
     ReadAccumulator,
@@ -97,9 +97,9 @@ pub enum MicroOp {
     PushPCL,
     PullPCL,
     PullPCHPlaceholder,
-    PullPCH(u16),
+    PullPCH(Option<u16>),
     IncrementPCPlaceholder,
-    IncrementPC(u16),
+    IncrementPC(Option<u16>),
     IncrementSP(u8),
     IncrementX,
     IncrementY,
@@ -107,15 +107,13 @@ pub enum MicroOp {
     DecrementY,
     DummyCycle,
     FixAddressPlaceholder, // just a dummy cycle but with passthrough of the provided value
-    FixAddress(u16),
-    FetchPointer,
-    AddXtoPointerPlaceholder,
-    AddXtoPointer(u8),
+    FixAddress(Option<u16>),
+    AddXtoPointer,
     FetchPointerBytePlaceholder,
     FetchPointerByteWithYPlaceholder,
-    FetchPointerLowByte(u8),
-    FetchPointerHighByte(u8),
-    FetchPointerHighByteWithY(u8),
+    FetchPointerLowByte(Option<u16>),
+    FetchPointerHighByte(Option<u16>),
+    FetchPointerHighByteWithY(Option<u16>),
     ReadHighFromIndirectPlaceholder,
     ReadHighFromIndirectLatch(Option<u16>),
     ReadLowFromIndirect,
@@ -430,13 +428,13 @@ impl Cpu {
             AddressingMode::IndexedIndirect => match inst_type {
                 InstType::Read => VecDeque::from(vec![
                     MicroOp::FetchZeroPage,
-                    MicroOp::AddXtoPointerPlaceholder,
+                    MicroOp::AddXtoPointer,
                     MicroOp::FetchPointerBytePlaceholder, // will be 2 ops after processed
                     inst,
                 ]),
                 InstType::RMW => VecDeque::from(vec![
                     MicroOp::FetchZeroPage,
-                    MicroOp::AddXtoPointerPlaceholder,
+                    MicroOp::AddXtoPointer,
                     MicroOp::FetchPointerBytePlaceholder,
                     MicroOp::ReadAddress,
                     inst,
@@ -444,7 +442,7 @@ impl Cpu {
                 ]),
                 InstType::Write => VecDeque::from(vec![
                     MicroOp::FetchZeroPage,
-                    MicroOp::AddXtoPointerPlaceholder,
+                    MicroOp::AddXtoPointer,
                     MicroOp::FetchPointerBytePlaceholder,
                     inst,
                 ]),
@@ -618,7 +616,7 @@ impl Cpu {
                 // LDX zero page
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPage,
-                    MicroOp::LoadX,
+                    MicroOp::LoadXfromAddress,
                     InstType::Read,
                 )
             }
@@ -626,7 +624,7 @@ impl Cpu {
                 // LDX zero page + y
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPageY,
-                    MicroOp::LoadX,
+                    MicroOp::LoadXfromAddress,
                     InstType::Read,
                 )
             }
@@ -634,7 +632,7 @@ impl Cpu {
                 // LDX absolute
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::Absolute,
-                    MicroOp::LoadX,
+                    MicroOp::LoadXfromAddress,
                     InstType::Read,
                 )
             }
@@ -642,7 +640,7 @@ impl Cpu {
                 // LDX absolute + y
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteY,
-                    MicroOp::LoadX,
+                    MicroOp::LoadXfromAddress,
                     InstType::Read,
                 )
             }
@@ -654,7 +652,7 @@ impl Cpu {
                 // LDY zero page
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPage,
-                    MicroOp::LoadY,
+                    MicroOp::LoadYfromAddress,
                     InstType::Read,
                 )
             }
@@ -662,7 +660,7 @@ impl Cpu {
                 // LDY zero page + x
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPageY,
-                    MicroOp::LoadY,
+                    MicroOp::LoadYfromAddress,
                     InstType::Read,
                 )
             }
@@ -670,7 +668,7 @@ impl Cpu {
                 // LDY absolute
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::Absolute,
-                    MicroOp::LoadY,
+                    MicroOp::LoadYfromAddress,
                     InstType::Read,
                 )
             }
@@ -678,7 +676,7 @@ impl Cpu {
                 // LDY absolute + x
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteX,
-                    MicroOp::LoadY,
+                    MicroOp::LoadYfromAddress,
                     InstType::Read,
                 )
             }
@@ -1221,7 +1219,7 @@ impl Cpu {
                 // CPX zero page
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPage,
-                    MicroOp::CompareX,
+                    MicroOp::CompareXAddress,
                     InstType::Read,
                 )
             }
@@ -1229,7 +1227,7 @@ impl Cpu {
                 // CPX absolute
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::Absolute,
-                    MicroOp::CompareX,
+                    MicroOp::CompareXAddress,
                     InstType::Read,
                 )
             }
@@ -1241,7 +1239,7 @@ impl Cpu {
                 // CPY zero page
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPage,
-                    MicroOp::CompareY,
+                    MicroOp::CompareYAddress,
                     InstType::Read,
                 )
             }
@@ -1249,7 +1247,7 @@ impl Cpu {
                 // CPY absolute
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::Absolute,
-                    MicroOp::CompareY,
+                    MicroOp::CompareYAddress,
                     InstType::Read,
                 )
             }
@@ -1261,7 +1259,7 @@ impl Cpu {
                 // ASL zero page
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPage,
-                    MicroOp::ArithmeticShiftLeft,
+                    MicroOp::ArithmeticShiftLeftAddress(None),
                     InstType::RMW,
                 )
             }
@@ -1269,7 +1267,7 @@ impl Cpu {
                 // ASL zero page + x
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPageX,
-                    MicroOp::ArithmeticShiftLeft,
+                    MicroOp::ArithmeticShiftLeftAddress(None),
                     InstType::RMW,
                 )
             }
@@ -1277,7 +1275,7 @@ impl Cpu {
                 // ASL absolute
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::Absolute,
-                    MicroOp::ArithmeticShiftLeft,
+                    MicroOp::ArithmeticShiftLeftAddress(None),
                     InstType::RMW,
                 )
             }
@@ -1285,7 +1283,7 @@ impl Cpu {
                 // ASL absolute + x
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteX,
-                    MicroOp::ArithmeticShiftLeft,
+                    MicroOp::ArithmeticShiftLeftAddress(None),
                     InstType::RMW,
                 )
             }
@@ -1297,7 +1295,7 @@ impl Cpu {
                 // LSR zero page
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPage,
-                    MicroOp::LogicalShiftRight,
+                    MicroOp::LogicalShiftRightAddress(None),
                     InstType::RMW,
                 )
             }
@@ -1305,7 +1303,7 @@ impl Cpu {
                 // LSR zero page + x
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPageX,
-                    MicroOp::LogicalShiftRight,
+                    MicroOp::LogicalShiftRightAddress(None),
                     InstType::RMW,
                 )
             }
@@ -1313,7 +1311,7 @@ impl Cpu {
                 // LSR absolute
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::Absolute,
-                    MicroOp::LogicalShiftRight,
+                    MicroOp::LogicalShiftRightAddress(None),
                     InstType::RMW,
                 )
             }
@@ -1321,7 +1319,7 @@ impl Cpu {
                 // LSR absolute + x
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteX,
-                    MicroOp::LogicalShiftRight,
+                    MicroOp::LogicalShiftRightAddress(None),
                     InstType::RMW,
                 )
             }
@@ -1333,7 +1331,7 @@ impl Cpu {
                 // ROL zero page
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPage,
-                    MicroOp::RotateLeft,
+                    MicroOp::RotateLeftAddress(None),
                     InstType::RMW,
                 )
             }
@@ -1341,7 +1339,7 @@ impl Cpu {
                 // ROL zero page + x
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPageX,
-                    MicroOp::RotateLeft,
+                    MicroOp::RotateLeftAddress(None),
                     InstType::RMW,
                 )
             }
@@ -1349,7 +1347,7 @@ impl Cpu {
                 // ROL absolute
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::Absolute,
-                    MicroOp::RotateLeft,
+                    MicroOp::RotateLeftAddress(None),
                     InstType::RMW,
                 )
             }
@@ -1357,7 +1355,7 @@ impl Cpu {
                 // ROL absolute + x
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteX,
-                    MicroOp::RotateLeft,
+                    MicroOp::RotateLeftAddress(None),
                     InstType::RMW,
                 )
             }
@@ -1369,7 +1367,7 @@ impl Cpu {
                 // ROR zero page
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPage,
-                    MicroOp::RotateRight,
+                    MicroOp::RotateRightAddress(None),
                     InstType::RMW,
                 )
             }
@@ -1377,7 +1375,7 @@ impl Cpu {
                 // ROR zero page + x
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPageX,
-                    MicroOp::RotateRight,
+                    MicroOp::RotateRightAddress(None),
                     InstType::RMW,
                 )
             }
@@ -1385,7 +1383,7 @@ impl Cpu {
                 // ROR absolute
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::Absolute,
-                    MicroOp::RotateRight,
+                    MicroOp::RotateRightAddress(None),
                     InstType::RMW,
                 )
             }
@@ -1393,7 +1391,7 @@ impl Cpu {
                 // ROR absolute + x
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteX,
-                    MicroOp::RotateRight,
+                    MicroOp::RotateRightAddress(None),
                     InstType::RMW,
                 )
             }
@@ -1589,75 +1587,70 @@ impl Cpu {
                 }
             }
             Some(MicroOp::CompareAddress) => {
-                self.current_inst.push_front(MicroOp::CompareAddress;
+                self.current_inst.push_front(MicroOp::CompareAddress);
                 if self.page_crossed {
                     self.page_crossed = false;
                     self.current_inst.push_front(MicroOp::DummyCycle);
                 }
             }
-            Some(MicroOp::CompareX) => {
-                self.current_inst
-                    .push_front(MicroOp::CompareXAddress(value));
+            Some(MicroOp::CompareXAddress) => {
+                self.current_inst.push_front(MicroOp::CompareXAddress);
                 if self.page_crossed {
                     self.page_crossed = false;
                     self.current_inst.push_front(MicroOp::DummyCycle);
                 }
             }
-            Some(MicroOp::CompareY) => {
-                self.current_inst
-                    .push_front(MicroOp::CompareYAddress(value));
+            Some(MicroOp::CompareYAddress) => {
+                self.current_inst.push_front(MicroOp::CompareYAddress);
                 if self.page_crossed {
                     self.page_crossed = false;
                     self.current_inst.push_front(MicroOp::DummyCycle);
                 }
             }
-            Some(MicroOp::ArithmeticShiftLeft) => {
+            Some(MicroOp::ArithmeticShiftLeftAddress(None)) => {
                 self.current_inst
                     .push_front(MicroOp::ArithmeticShiftLeftAddress(value));
             }
-            Some(MicroOp::LogicalShiftRight) => {
+            Some(MicroOp::LogicalShiftRightAddress(None)) => {
                 self.current_inst
                     .push_front(MicroOp::LogicalShiftRightAddress(value));
             }
-            Some(MicroOp::RotateLeft) => {
+            Some(MicroOp::RotateLeftAddress(None)) => {
                 self.current_inst
                     .push_front(MicroOp::RotateLeftAddress(value));
             }
-            Some(MicroOp::RotateRight) => {
+            Some(MicroOp::RotateRightAddress(None)) => {
                 self.current_inst
                     .push_front(MicroOp::RotateRightAddress(value));
             }
-            Some(MicroOp::LoadX) => {
+            Some(MicroOp::LoadXfromAddress) => {
                 self.current_inst.push_front(MicroOp::LoadXfromAddress);
                 if self.page_crossed {
                     self.page_crossed = false;
                     self.current_inst.push_front(MicroOp::DummyCycle);
                 }
             }
-            Some(MicroOp::LoadY) => {
+            Some(MicroOp::LoadYfromAddress) => {
                 self.current_inst.push_front(MicroOp::LoadYfromAddress);
                 if self.page_crossed {
                     self.page_crossed = false;
                     self.current_inst.push_front(MicroOp::DummyCycle);
                 }
             }
-            Some(MicroOp::AddXtoPointerPlaceholder) => {
-                self.current_inst
-                    .push_front(MicroOp::AddXtoPointer(value as u8));
-            }
             Some(MicroOp::FetchPointerBytePlaceholder) => {
                 self.current_inst
-                    .push_front(MicroOp::FetchPointerHighByte(value as u8));
+                    .push_front(MicroOp::FetchPointerHighByte(value));
                 self.current_inst
-                    .push_front(MicroOp::FetchPointerLowByte(value as u8));
+                    .push_front(MicroOp::FetchPointerLowByte(value));
             }
             Some(MicroOp::FetchPointerByteWithYPlaceholder) => {
                 self.current_inst
-                    .push_front(MicroOp::FetchPointerHighByteWithY(value as u8));
+                    .push_front(MicroOp::FetchPointerHighByteWithY(value));
                 self.current_inst
-                    .push_front(MicroOp::FetchPointerLowByte(value as u8));
+                    .push_front(MicroOp::FetchPointerLowByte(value));
             }
             Some(MicroOp::FixAddressPlaceholder) => {
+                // TODO: remove if value not used
                 self.current_inst.push_front(MicroOp::FixAddress(value));
             }
             Some(MicroOp::PullPCHPlaceholder) => {
@@ -1690,9 +1683,10 @@ impl Cpu {
                 let address = self.temp_addr as u8;
                 self.temp_addr = address.wrapping_add(self.index_y as u8) as u16;
             }
-            MicroOp::AddXtoPointer(pointer) => {
+            MicroOp::AddXtoPointer => {
+                let pointer = self.temp_addr as u8;
                 let new_pointer: u8 = pointer.wrapping_add(self.index_x);
-                self.push_micro_from_placeholder(new_pointer as u16);
+                self.push_micro_from_placeholder(Some(new_pointer as u16));
             }
             MicroOp::FetchLowAddrByte => {
                 self.temp_addr = self.mem_read(self.pc) as u16;
@@ -1732,7 +1726,7 @@ impl Cpu {
                 let new_addr = self.temp_addr.wrapping_add(self.index_x as u16);
                 self.page_crossed = (self.temp_addr & 0xFF00) != (new_addr & 0xFF00);
                 self.temp_addr = new_addr;
-                self.push_micro_from_placeholder(self.temp_addr);
+                self.push_micro_from_placeholder(None);
             }
             MicroOp::FetchHighAddrByteWithY => {
                 self.temp_addr |= (self.mem_read(self.pc) as u16) << 8;
@@ -1740,21 +1734,30 @@ impl Cpu {
                 let new_addr = self.temp_addr.wrapping_add(self.index_y as u16);
                 self.page_crossed = (self.temp_addr & 0xFF00) != (new_addr & 0xFF00);
                 self.temp_addr = new_addr;
-                self.push_micro_from_placeholder(self.temp_addr);
+                self.push_micro_from_placeholder(None);
             }
-            MicroOp::FetchPointerLowByte(pointer) => {
-                self.temp_addr = self.mem_read(pointer as u16) as u16;
-            }
-            MicroOp::FetchPointerHighByte(pointer) => {
-                self.temp_addr |= (self.mem_read((pointer as u16).wrapping_add(1)) as u16) << 8;
-            }
-            MicroOp::FetchPointerHighByteWithY(pointer) => {
-                self.temp_addr |= (self.mem_read((pointer as u16).wrapping_add(1)) as u16) << 8;
-                let new_addr = self.temp_addr.wrapping_add(self.index_y as u16);
-                self.page_crossed = (self.temp_addr & 0xFF00) != (new_addr & 0xFF00);
-                self.temp_addr = new_addr;
-                self.push_micro_from_placeholder(self.temp_addr);
-            }
+            MicroOp::FetchPointerLowByte(pointer) => match pointer {
+                Some(pointer) => {
+                    self.temp_addr = self.mem_read(pointer) as u16;
+                }
+                None => panic!("Expected pointer value in FetchPointerLowByte"),
+            },
+            MicroOp::FetchPointerHighByte(pointer) => match pointer {
+                Some(pointer) => {
+                    self.temp_addr |= (self.mem_read(pointer.wrapping_add(1)) as u16) << 8;
+                }
+                None => panic!("Expected pointer value in FetchPointerHighByte"),
+            },
+            MicroOp::FetchPointerHighByteWithY(pointer) => match pointer {
+                Some(pointer) => {
+                    self.temp_addr |= (self.mem_read(pointer.wrapping_add(1)) as u16) << 8;
+                    let new_addr = self.temp_addr.wrapping_add(self.index_y as u16);
+                    self.page_crossed = (self.temp_addr & 0xFF00) != (new_addr & 0xFF00);
+                    self.temp_addr = new_addr;
+                    self.push_micro_from_placeholder(Some(self.temp_addr));
+                }
+                None => panic!("Expected pointer value in FetchPointerHighByteWithY"),
+            },
             MicroOp::FetchRelativeOffset(value) => {
                 let offset = self.mem_read(self.pc);
                 self.pc += 1;
@@ -1859,17 +1862,23 @@ impl Cpu {
                 let address = 0x0100 + self.sp as u16;
                 let pcl = self.mem_read(address);
                 self.sp = self.sp.wrapping_add(1);
-                self.push_micro_from_placeholder(pcl as u16);
+                self.push_micro_from_placeholder(Some(pcl as u16));
             }
-            MicroOp::PullPCH(pcl) => {
-                let address = 0x0100 + self.sp as u16;
-                let pch = (self.mem_read(address) as u16) << 8;
-                let pc = pch | pcl;
-                self.push_micro_from_placeholder(pc);
-            }
-            MicroOp::IncrementPC(pc) => {
-                self.pc = pc + 1;
-            }
+            MicroOp::PullPCH(pcl) => match pcl {
+                Some(pcl) => {
+                    let address = STACK_BOTTOM + self.sp as u16;
+                    let pch = (self.mem_read(address) as u16) << 8;
+                    let pc = pch | pcl;
+                    self.push_micro_from_placeholder(Some(pc));
+                }
+                None => panic!("Expected pcl value in instruction PullPCH"),
+            },
+            MicroOp::IncrementPC(pc) => match pc {
+                Some(pc) => {
+                    self.pc = pc.wrapping_add(1);
+                }
+                None => panic!("Expected pc value in instruction IncrementPC"),
+            },
             MicroOp::IncrementSP(value) => {
                 self.sp = self.sp.wrapping_add(value);
             }
@@ -2023,8 +2032,8 @@ impl Cpu {
                 self.pc += 1;
                 self.compare(self.index_x, value);
             }
-            MicroOp::CompareXAddress(address) => {
-                let value = self.mem_read(address);
+            MicroOp::CompareXAddress => {
+                let value = self.mem_read(self.temp_addr);
                 self.compare(self.index_x, value);
             }
             MicroOp::CompareY => {
@@ -2032,8 +2041,8 @@ impl Cpu {
                 self.pc += 1;
                 self.compare(self.index_y, value);
             }
-            MicroOp::CompareYAddress(address) => {
-                let value = self.mem_read(address);
+            MicroOp::CompareYAddress => {
+                let value = self.mem_read(self.temp_addr);
                 self.compare(self.index_y, value);
             }
             MicroOp::ArithmeticShiftLeft => {
@@ -2050,27 +2059,36 @@ impl Cpu {
             MicroOp::LogicalShiftRight => {
                 self.accumulator = self.lsr(self.accumulator);
             }
-            MicroOp::LogicalShiftRightAddress(address) => {
-                let value = self.mem_read(address);
-                let result = self.lsr(value);
-                self.mem_write(address, result);
-            }
+            MicroOp::LogicalShiftRightAddress(value) => match value {
+                Some(to_shift) => {
+                    let value = to_shift as u8;
+                    let result = self.lsr(value);
+                    self.mem_write(self.temp_addr, result);
+                }
+                None => panic!("Expected value in instruction LogicalShiftRightAddress"),
+            },
             MicroOp::RotateLeft => {
                 self.accumulator = self.rol(self.accumulator);
             }
-            MicroOp::RotateLeftAddress(address) => {
-                let value = self.mem_read(address);
-                let result = self.rol(value);
-                self.mem_write(address, result);
-            }
+            MicroOp::RotateLeftAddress(value) => match value {
+                Some(to_rotate) => {
+                    let value = to_rotate as u8;
+                    let result = self.rol(value);
+                    self.mem_write(self.temp_addr, result);
+                }
+                None => panic!("Expected value in instruction RotateLeftAddress"),
+            },
             MicroOp::RotateRight => {
                 self.accumulator = self.ror(self.accumulator);
             }
-            MicroOp::RotateRightAddress(address) => {
-                let value = self.mem_read(address);
-                let result = self.ror(value);
-                self.mem_write(address, result);
-            }
+            MicroOp::RotateRightAddress(value) => match value {
+                Some(to_rotate) => {
+                    let value = to_rotate as u8;
+                    let result = self.ror(value);
+                    self.mem_write(self.temp_addr, result);
+                }
+                None => panic!("Expected value in instruction RotateRightAddress"),
+            },
             MicroOp::Break => {
                 //TODO: this op is more complex. research and implement.
                 return;
