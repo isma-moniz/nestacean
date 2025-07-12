@@ -7,6 +7,8 @@ const FLAG_ZERO: u8 = 0b0000_0010;
 const FLAG_NEGATIVE: u8 = 0b1000_0000;
 const FLAG_CARRY: u8 = 0b0000_0001;
 const FLAG_OVERFLOW: u8 = 0b0100_0000;
+const FLAG_DECIMAL: u8 = 0b0000_1000;
+const FLAG_INTERRUPT: u8 = 0b0000_0100;
 const BIT_7: u8 = 0b1000_0000;
 const STACK_PTR_TOP: u8 = 0xFF;
 const STACK_BOTTOM: u16 = 0x0100;
@@ -124,6 +126,13 @@ pub enum MicroOp {
     WriteBackAndDecrement(Option<u16>),
     WriteToAddressPlaceholder,
     WriteToAddress(Option<u16>),
+    SetCarry,
+    ClearCarry,
+    ClearDecimalMode,
+    SetDecimalMode,
+    ClearInterrupt,
+    SetInterrupt,
+    ClearOverflow,
 }
 
 pub struct Cpu {
@@ -1575,6 +1584,40 @@ impl Cpu {
                     FLAG_OVERFLOW
                 )])
             }
+            0x18 => {
+                // CLC
+                VecDeque::from(vec![
+                    MicroOp::ClearCarry
+                ])
+            }
+            0x38 => {
+                // SEC
+                VecDeque::from(vec![MicroOp::SetCarry])
+            }
+            0xD8 => {
+                // CLD
+                VecDeque::from(vec![MicroOp::ClearDecimalMode])
+            }
+            0xF8 => {
+                // SED
+                VecDeque::from(vec![MicroOp::SetDecimalMode])
+            }
+            0x78 => {
+                // SEI
+                VecDeque::from(vec![MicroOp::SetInterrupt])
+            }
+            0x58 => {
+                // CLI
+                VecDeque::from(vec![MicroOp::ClearInterrupt])
+            }
+            0xB8 => {
+                // CLV
+                VecDeque::from(vec![MicroOp::ClearOverflow])
+            }
+            0xEA => {
+                // NOP
+                VecDeque::from(vec![MicroOp::DummyCycle])
+            }
             0x00 => {
                 // BRK
                 VecDeque::from(vec![MicroOp::Break])
@@ -2146,6 +2189,27 @@ impl Cpu {
                 }
                 None => panic!("Expected value in instruction RotateRightAddress"),
             },
+            MicroOp::ClearCarry => {
+                self.status_p &= !FLAG_CARRY;
+            }
+            MicroOp::SetCarry => {
+                self.status_p |= FLAG_CARRY;
+            }
+            MicroOp::ClearDecimalMode => {
+                self.status_p &= !FLAG_DECIMAL;
+            }
+            MicroOp::SetDecimalMode => {
+                self.status_p |= FLAG_DECIMAL;
+            }
+            MicroOp::ClearInterrupt => {
+                self.status_p &= !FLAG_INTERRUPT;
+            }
+            MicroOp::SetInterrupt => {
+                self.status_p |= FLAG_INTERRUPT;
+            }
+            MicroOp::ClearOverflow => {
+                self.status_p &= !FLAG_OVERFLOW;
+            }
             MicroOp::Break => {
                 //TODO: this op is more complex. research and implement.
                 return;

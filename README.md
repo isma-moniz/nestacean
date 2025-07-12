@@ -51,12 +51,12 @@ This is a WIP. I had the brilliant idea to make a cicle accurate emulator :D so 
 - [x] BPL
 - [x] BVC
 - [x] BVS
-- [ ] CLC
-- [ ] CLD
-- [ ] CLI
-- [ ] CLV
-- [ ] SEC
-- [ ] SED
-- [ ] SEI
-- [ ] NOP
+- [x] CLC
+- [x] CLD
+- [x] CLI
+- [x] CLV
+- [x] SEC
+- [x] SED
+- [x] SEI
+- [x] NOP
 - [ ] RTI
