@@ -109,9 +109,9 @@ pub enum MicroOp {
     FixAddressPlaceholder, // just a dummy cycle but with passthrough of the provided value
     FixAddress(Option<u16>),
     AddXtoPointer,
-    FetchPointerBytePlaceholder,
-    FetchPointerByteWithYPlaceholder,
-    FetchPointerLowByte(Option<u16>),
+    FetchPointerHighBytePlaceholder,
+    FetchPointerHighByteWithYPlaceholder,
+    FetchPointerLowByte,
     FetchPointerHighByte(Option<u16>),
     FetchPointerHighByteWithY(Option<u16>),
     ReadHighFromIndirectPlaceholder,
@@ -392,7 +392,8 @@ impl Cpu {
                 InstType::RMW => VecDeque::from(vec![
                     MicroOp::FetchLowAddrByte,
                     MicroOp::FetchHighAddrByteWithX,
-                    MicroOp::FixAddressPlaceholder, // always happens with this instruction
+                    MicroOp::DummyCycle, // always happens with this instruction, "fixing the
+                    // address"
                     MicroOp::ReadAddress,
                     inst,
                     MicroOp::WriteToAddressPlaceholder,
@@ -413,7 +414,7 @@ impl Cpu {
                 InstType::RMW => VecDeque::from(vec![
                     MicroOp::FetchLowAddrByte,
                     MicroOp::FetchHighAddrByteWithY,
-                    MicroOp::FixAddressPlaceholder, // always happens with this instruction
+                    MicroOp::DummyCycle, // always happens with this instruction
                     MicroOp::ReadAddress,
                     inst,
                     MicroOp::WriteToAddressPlaceholder,
@@ -429,13 +430,15 @@ impl Cpu {
                 InstType::Read => VecDeque::from(vec![
                     MicroOp::FetchZeroPage,
                     MicroOp::AddXtoPointer,
-                    MicroOp::FetchPointerBytePlaceholder, // will be 2 ops after processed
+                    MicroOp::FetchPointerLowByte,
+                    MicroOp::FetchPointerHighBytePlaceholder,
                     inst,
                 ]),
                 InstType::RMW => VecDeque::from(vec![
                     MicroOp::FetchZeroPage,
                     MicroOp::AddXtoPointer,
-                    MicroOp::FetchPointerBytePlaceholder,
+                    MicroOp::FetchPointerLowByte,
+                    MicroOp::FetchPointerHighBytePlaceholder,
                     MicroOp::ReadAddress,
                     inst,
                     MicroOp::WriteToAddressPlaceholder,
@@ -443,19 +446,22 @@ impl Cpu {
                 InstType::Write => VecDeque::from(vec![
                     MicroOp::FetchZeroPage,
                     MicroOp::AddXtoPointer,
-                    MicroOp::FetchPointerBytePlaceholder,
+                    MicroOp::FetchPointerLowByte,
+                    MicroOp::FetchPointerHighBytePlaceholder,
                     inst,
                 ]),
             },
             AddressingMode::IndirectIndexed => match inst_type {
                 InstType::Read => VecDeque::from(vec![
                     MicroOp::FetchZeroPage,
-                    MicroOp::FetchPointerByteWithYPlaceholder, // may add dummy cycle
+                    MicroOp::FetchPointerLowByte,
+                    MicroOp::FetchPointerHighByteWithYPlaceholder, // may add dummy cycle
                     inst,
                 ]),
                 InstType::RMW => VecDeque::from(vec![
                     MicroOp::FetchZeroPage,
-                    MicroOp::FetchPointerByteWithYPlaceholder,
+                    MicroOp::FetchPointerLowByte,
+                    MicroOp::FetchPointerHighByteWithYPlaceholder,
                     MicroOp::FixAddressPlaceholder,
                     MicroOp::ReadAddress,
                     inst,
@@ -463,7 +469,8 @@ impl Cpu {
                 ]),
                 InstType::Write => VecDeque::from(vec![
                     MicroOp::FetchZeroPage,
-                    MicroOp::FetchPointerByteWithYPlaceholder,
+                    MicroOp::FetchPointerLowByte,
+                    MicroOp::FetchPointerHighByteWithYPlaceholder,
                     MicroOp::ReadAddress,
                     inst,
                 ]),
@@ -1637,17 +1644,13 @@ impl Cpu {
                     self.current_inst.push_front(MicroOp::DummyCycle);
                 }
             }
-            Some(MicroOp::FetchPointerBytePlaceholder) => {
+            Some(MicroOp::FetchPointerHighBytePlaceholder) => {
                 self.current_inst
                     .push_front(MicroOp::FetchPointerHighByte(value));
-                self.current_inst
-                    .push_front(MicroOp::FetchPointerLowByte(value));
             }
-            Some(MicroOp::FetchPointerByteWithYPlaceholder) => {
+            Some(MicroOp::FetchPointerHighByteWithYPlaceholder) => {
                 self.current_inst
                     .push_front(MicroOp::FetchPointerHighByteWithY(value));
-                self.current_inst
-                    .push_front(MicroOp::FetchPointerLowByte(value));
             }
             Some(MicroOp::FixAddressPlaceholder) => {
                 // TODO: remove if value not used
@@ -1658,6 +1661,12 @@ impl Cpu {
             }
             Some(MicroOp::IncrementPCPlaceholder) => {
                 self.current_inst.push_front(MicroOp::IncrementPC(value));
+            }
+            Some(MicroOp::DummyCycle) => {
+                self.current_inst.push_front(MicroOp::DummyCycle);
+            }
+            Some(MicroOp::ReadAddress) => {
+                self.current_inst.push_front(MicroOp::ReadAddress);
             }
             Some(other) => panic!("Unexpected micro-op: {:?}", other),
             None => panic!("No micro-op!"),
@@ -1685,8 +1694,7 @@ impl Cpu {
             }
             MicroOp::AddXtoPointer => {
                 let pointer = self.temp_addr as u8;
-                let new_pointer: u8 = pointer.wrapping_add(self.index_x);
-                self.push_micro_from_placeholder(Some(new_pointer as u16));
+                self.temp_addr = pointer.wrapping_add(self.index_x) as u16;
             }
             MicroOp::FetchLowAddrByte => {
                 self.temp_addr = self.mem_read(self.pc) as u16;
@@ -1736,12 +1744,11 @@ impl Cpu {
                 self.temp_addr = new_addr;
                 self.push_micro_from_placeholder(None);
             }
-            MicroOp::FetchPointerLowByte(pointer) => match pointer {
-                Some(pointer) => {
-                    self.temp_addr = self.mem_read(pointer) as u16;
-                }
-                None => panic!("Expected pointer value in FetchPointerLowByte"),
-            },
+            MicroOp::FetchPointerLowByte => {
+                let pointer = self.temp_addr;
+                self.temp_addr = self.mem_read(pointer) as u16;
+                self.push_micro_from_placeholder(Some(pointer));
+            }
             MicroOp::FetchPointerHighByte(pointer) => match pointer {
                 Some(pointer) => {
                     self.temp_addr |= (self.mem_read(pointer.wrapping_add(1)) as u16) << 8;
