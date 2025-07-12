@@ -14,6 +14,8 @@ const STACK_PTR_TOP: u8 = 0xFF;
 const STACK_BOTTOM: u16 = 0x0100;
 const PROGRAM_START: u16 = 0x8000;
 const PC_INIT_LOCATION: u16 = 0xFFFC;
+const INTERRUPT_VEC_LOW: u16 = 0xFFFE;
+const INTERRUPT_VEC_HIGH: u16 = 0xFFFF;
 
 enum AddressingMode {
     ZeroPage,
@@ -74,6 +76,8 @@ pub enum MicroOp {
     LoadYfromAddress,
     FetchLowAddrByte,
     FetchHighAddrByte,
+    FetchInterruptLow,
+    FetchInterruptHigh,
     CopyLowFetchHightoPC,
     FetchHighAddrByteWithX,
     FetchHighAddrByteWithY,
@@ -93,6 +97,7 @@ pub enum MicroOp {
     LoadAccumulatorY,
     PushAccumulator,
     PushStatus,
+    PushStatusWithBFlag,
     PullAccumulator,
     PullStatus,
     PushPCH,
@@ -1532,63 +1537,61 @@ impl Cpu {
                 // BCC
                 VecDeque::from(vec![MicroOp::FetchRelativeOffset(
                     self.status_p & FLAG_CARRY,
-                    0x00
+                    0x00,
                 )])
             }
             0xB0 => {
                 // BCS
                 VecDeque::from(vec![MicroOp::FetchRelativeOffset(
                     self.status_p & FLAG_CARRY,
-                    FLAG_CARRY
+                    FLAG_CARRY,
                 )])
             }
             0xF0 => {
                 // BEQ
                 VecDeque::from(vec![MicroOp::FetchRelativeOffset(
                     self.status_p & FLAG_ZERO,
-                    FLAG_ZERO
+                    FLAG_ZERO,
                 )])
             }
             0xD0 => {
                 // BNE
                 VecDeque::from(vec![MicroOp::FetchRelativeOffset(
                     self.status_p & FLAG_ZERO,
-                    0x00
+                    0x00,
                 )])
             }
             0x30 => {
                 // BMI
                 VecDeque::from(vec![MicroOp::FetchRelativeOffset(
                     self.status_p & FLAG_NEGATIVE,
-                    FLAG_NEGATIVE
+                    FLAG_NEGATIVE,
                 )])
             }
             0x10 => {
                 // BPL
                 VecDeque::from(vec![MicroOp::FetchRelativeOffset(
                     self.status_p & FLAG_NEGATIVE,
-                    0x00
+                    0x00,
                 )])
             }
             0x50 => {
                 // BVC
                 VecDeque::from(vec![MicroOp::FetchRelativeOffset(
                     self.status_p & FLAG_OVERFLOW,
-                    0x00
+                    0x00,
                 )])
             }
             0x70 => {
                 // BVS
                 VecDeque::from(vec![MicroOp::FetchRelativeOffset(
                     self.status_p & FLAG_OVERFLOW,
-                    FLAG_OVERFLOW
+                    FLAG_OVERFLOW,
                 )])
             }
             0x18 => {
                 // CLC
-                VecDeque::from(vec![
-                    MicroOp::ClearCarry
-                ])
+                VecDeque::from(vec![MicroOp::ClearCarry])
             }
             0x38 => {
                 // SEC
@@ -1620,7 +1623,14 @@ impl Cpu {
             }
             0x00 => {
                 // BRK
-                VecDeque::from(vec![MicroOp::Break])
+                VecDeque::from(vec![
+                    MicroOp::IncrementPC(Some(self.pc)),
+                    MicroOp::PushPCH,
+                    MicroOp::PushPCL,
+                    MicroOp::PushStatusWithBFlag,
+                    MicroOp::FetchInterruptLow,
+                    MicroOp::FetchInterruptHigh,
+                ])
             }
             _ => unimplemented!("{}", opcode),
         }
@@ -1797,6 +1807,12 @@ impl Cpu {
                 self.temp_addr |= (self.mem_read(self.pc) as u16) << 8;
                 self.pc += 1;
             }
+            MicroOp::FetchInterruptLow => {
+                self.pc = self.mem_read(INTERRUPT_VEC_LOW) as u16;
+            }
+            MicroOp::FetchInterruptHigh => {
+                self.pc |= (self.mem_read(INTERRUPT_VEC_HIGH) as u16) << 8;
+            }
             MicroOp::CopyLowFetchHightoPC => {
                 let high_byte = (self.mem_read(self.pc) as u16) << 8;
                 self.pc += 1;
@@ -1943,6 +1959,12 @@ impl Cpu {
             }
             MicroOp::PushStatus => {
                 let address: u16 = 0x0100 + self.sp as u16;
+                self.mem_write(address, self.status_p);
+                self.sp = self.sp.wrapping_sub(1);
+            }
+            MicroOp::PushStatusWithBFlag => {
+                self.status_p |= FLAG_DECIMAL;
+                let address = STACK_BOTTOM + self.sp as u16;
                 self.mem_write(address, self.status_p);
                 self.sp = self.sp.wrapping_sub(1);
             }

@@ -11,7 +11,7 @@ This is a WIP. I had the brilliant idea to make a cicle accurate emulator :D so 
 - [x] DEC
 - [x] DEY
 - [x] DEX
-- [ ] BRK
+- [x] BRK
 - [x] LDX
 - [x] LDY
 - [x] STA
