@@ -97,8 +97,7 @@ pub enum MicroOp {
     LoadStackPointerX,
     LoadAccumulatorY,
     PushAccumulator,
-    PushStatus,
-    PushStatusWithBFlag,
+    PushStatusBrkPhp,
     PullAccumulator,
     PullStatus,
     PushPCH,
@@ -839,7 +838,7 @@ impl Cpu {
             }
             0x08 => {
                 // PHP
-                VecDeque::from(vec![MicroOp::DummyCycle, MicroOp::PushStatus])
+                VecDeque::from(vec![MicroOp::DummyCycle, MicroOp::PushStatusBrkPhp])
             }
             0x68 => {
                 // PLA
@@ -1628,7 +1627,7 @@ impl Cpu {
                     MicroOp::IncrementPC(Some(self.pc)),
                     MicroOp::PushPCH,
                     MicroOp::PushPCL,
-                    MicroOp::PushStatusWithBFlag,
+                    MicroOp::PushStatusBrkPhp,
                     MicroOp::FetchInterruptLow,
                     MicroOp::FetchInterruptHigh,
                 ])
@@ -1964,35 +1963,30 @@ impl Cpu {
                 self.sp = self.index_x;
             }
             MicroOp::PushAccumulator => {
-                let address: u16 = 0x0100 + self.sp as u16;
+                let address: u16 = STACK_BOTTOM + self.sp as u16;
                 self.mem_write(address, self.accumulator);
                 self.sp = self.sp.wrapping_sub(1);
             }
-            MicroOp::PushStatus => {
-                let address: u16 = 0x0100 + self.sp as u16;
-                self.mem_write(address, self.status_p);
-                self.sp = self.sp.wrapping_sub(1);
-            }
-            MicroOp::PushStatusWithBFlag => {
-                self.status_p |= FLAG_BREAK;
-                let address = STACK_BOTTOM + self.sp as u16;
-                self.mem_write(address, self.status_p);
+            MicroOp::PushStatusBrkPhp => {
+                let status_w_b = self.status_p | FLAG_BREAK;
+                let address: u16 = STACK_BOTTOM + self.sp as u16;
+                self.mem_write(address, status_w_b);
                 self.sp = self.sp.wrapping_sub(1);
             }
             MicroOp::PushPCH => {
-                let address = 0x0100 + self.sp as u16;
+                let address = STACK_BOTTOM + self.sp as u16;
                 let pch: u8 = (self.pc >> 8) as u8;
                 self.mem_write(address, pch);
                 self.sp = self.sp.wrapping_sub(1);
             }
             MicroOp::PushPCL => {
-                let address = 0x0100 + self.sp as u16;
+                let address = STACK_BOTTOM + self.sp as u16;
                 let pcl = self.pc as u8;
                 self.mem_write(address, pcl);
                 self.sp = self.sp.wrapping_sub(1);
             }
             MicroOp::PullPCL => {
-                let address = 0x0100 + self.sp as u16;
+                let address = STACK_BOTTOM + self.sp as u16;
                 let pcl = self.mem_read(address);
                 self.sp = self.sp.wrapping_add(1);
                 self.push_micro_from_placeholder(Some(pcl as u16));
@@ -2016,13 +2010,13 @@ impl Cpu {
                 self.sp = self.sp.wrapping_add(value);
             }
             MicroOp::PullAccumulator => {
-                let address: u16 = 0x0100 + self.sp as u16;
+                let address: u16 = STACK_BOTTOM + self.sp as u16;
                 self.accumulator = self.mem_read(address);
 
                 self.set_flags_zero_neg(self.accumulator);
             }
             MicroOp::PullStatus => {
-                let address: u16 = 0x0100 + self.sp as u16;
+                let address: u16 = STACK_BOTTOM + self.sp as u16;
                 self.status_p = self.mem_read(address);
             }
             MicroOp::IncrementX => {
@@ -2242,10 +2236,6 @@ impl Cpu {
             }
             MicroOp::ClearOverflow => {
                 self.status_p &= !FLAG_OVERFLOW;
-            }
-            MicroOp::Break => {
-                //TODO: this op is more complex. research and implement.
-                return;
             }
             MicroOp::DummyCycle => {
                 return;
