@@ -153,6 +153,7 @@ pub struct Cpu {
     page_crossed: bool,
     debug_active: bool,
     debug_mem_page: u8,
+    current_opcode: u8,
 }
 
 impl Cpu {
@@ -170,6 +171,7 @@ impl Cpu {
             page_crossed: false,
             debug_active: false,
             debug_mem_page: 0u8,
+            current_opcode: 0u8, // doesn't really conflict with BRK, because current_inst is empty so the first opcode will be fetched
         }
     }
 
@@ -415,7 +417,7 @@ impl Cpu {
                 InstType::Write => VecDeque::from(vec![
                     MicroOp::FetchLowAddrByte,
                     MicroOp::FetchHighAddrByteWithX,
-                    MicroOp::ReadAddress,
+                    MicroOp::DummyCycle, // read and fix
                     inst,
                 ]),
             },
@@ -436,7 +438,7 @@ impl Cpu {
                 InstType::Write => VecDeque::from(vec![
                     MicroOp::FetchLowAddrByte,
                     MicroOp::FetchHighAddrByteWithY,
-                    MicroOp::ReadAddress,
+                    MicroOp::DummyCycle, // read and fix
                     inst,
                 ]),
             },
@@ -485,7 +487,7 @@ impl Cpu {
                     MicroOp::FetchZeroPage,
                     MicroOp::FetchPointerLowByte,
                     MicroOp::FetchPointerHighByteWithYPlaceholder,
-                    MicroOp::ReadAddress,
+                    MicroOp::DummyCycle, // read from effective address, fix high byte of effective address
                     inst,
                 ]),
             },
@@ -503,6 +505,36 @@ impl Cpu {
         self.page_crossed = false;
         self.current_inst = VecDeque::new();
         self.pc = self.mem_read_u16(PC_INIT_LOCATION);
+    }
+
+    pub fn load_test_game(&mut self) {
+        
+        let game_code = vec![
+            0x20, 0x06, 0x06, 0x20, 0x38, 0x06, 0x20, 0x0d, 0x06, 0x20, 0x2a, 0x06, 0x60, 0xa9, 0x02, 0x85,
+            0x02, 0xa9, 0x04, 0x85, 0x03, 0xa9, 0x11, 0x85, 0x10, 0xa9, 0x10, 0x85, 0x12, 0xa9, 0x0f, 0x85,
+            0x14, 0xa9, 0x04, 0x85, 0x11, 0x85, 0x13, 0x85, 0x15, 0x60, 0xa5, 0xfe, 0x85, 0x00, 0xa5, 0xfe,
+            0x29, 0x03, 0x18, 0x69, 0x02, 0x85, 0x01, 0x60, 0x20, 0x4d, 0x06, 0x20, 0x8d, 0x06, 0x20, 0xc3,
+            0x06, 0x20, 0x19, 0x07, 0x20, 0x20, 0x07, 0x20, 0x2d, 0x07, 0x4c, 0x38, 0x06, 0xa5, 0xff, 0xc9,
+            0x77, 0xf0, 0x0d, 0xc9, 0x64, 0xf0, 0x14, 0xc9, 0x73, 0xf0, 0x1b, 0xc9, 0x61, 0xf0, 0x22, 0x60,
+            0xa9, 0x04, 0x24, 0x02, 0xd0, 0x26, 0xa9, 0x01, 0x85, 0x02, 0x60, 0xa9, 0x08, 0x24, 0x02, 0xd0,
+            0x1b, 0xa9, 0x02, 0x85, 0x02, 0x60, 0xa9, 0x01, 0x24, 0x02, 0xd0, 0x10, 0xa9, 0x04, 0x85, 0x02,
+            0x60, 0xa9, 0x02, 0x24, 0x02, 0xd0, 0x05, 0xa9, 0x08, 0x85, 0x02, 0x60, 0x60, 0x20, 0x94, 0x06,
+            0x20, 0xa8, 0x06, 0x60, 0xa5, 0x00, 0xc5, 0x10, 0xd0, 0x0d, 0xa5, 0x01, 0xc5, 0x11, 0xd0, 0x07,
+            0xe6, 0x03, 0xe6, 0x03, 0x20, 0x2a, 0x06, 0x60, 0xa2, 0x02, 0xb5, 0x10, 0xc5, 0x10, 0xd0, 0x06,
+            0xb5, 0x11, 0xc5, 0x11, 0xf0, 0x09, 0xe8, 0xe8, 0xe4, 0x03, 0xf0, 0x06, 0x4c, 0xaa, 0x06, 0x4c,
+            0x35, 0x07, 0x60, 0xa6, 0x03, 0xca, 0x8a, 0xb5, 0x10, 0x95, 0x12, 0xca, 0x10, 0xf9, 0xa5, 0x02,
+            0x4a, 0xb0, 0x09, 0x4a, 0xb0, 0x19, 0x4a, 0xb0, 0x1f, 0x4a, 0xb0, 0x2f, 0xa5, 0x10, 0x38, 0xe9,
+            0x20, 0x85, 0x10, 0x90, 0x01, 0x60, 0xc6, 0x11, 0xa9, 0x01, 0xc5, 0x11, 0xf0, 0x28, 0x60, 0xe6,
+            0x10, 0xa9, 0x1f, 0x24, 0x10, 0xf0, 0x1f, 0x60, 0xa5, 0x10, 0x18, 0x69, 0x20, 0x85, 0x10, 0xb0,
+            0x01, 0x60, 0xe6, 0x11, 0xa9, 0x06, 0xc5, 0x11, 0xf0, 0x0c, 0x60, 0xc6, 0x10, 0xa5, 0x10, 0x29,
+            0x1f, 0xc9, 0x1f, 0xf0, 0x01, 0x60, 0x4c, 0x35, 0x07, 0xa0, 0x00, 0xa5, 0xfe, 0x91, 0x00, 0x60,
+            0xa6, 0x03, 0xa9, 0x00, 0x81, 0x10, 0xa2, 0x00, 0xa9, 0x01, 0x81, 0x10, 0x60, 0xa2, 0x00, 0xea,
+            0xea, 0xca, 0xd0, 0xfb, 0x60
+        ];
+    
+        self.memory[0x0600..(0x0600 + game_code.len())].copy_from_slice(&game_code[..]);
+        self.mem_write_u16(PC_INIT_LOCATION, 0x0600);
+
     }
 
     pub fn load_program(&mut self, program: &[u8]) {
@@ -535,9 +567,9 @@ impl Cpu {
 
     fn execute_current_cycle(&mut self) {
         if self.current_inst.is_empty() {
-            let opcode = self.memory[self.pc as usize];
+            self.current_opcode = self.memory[self.pc as usize];
             self.pc += 1;
-            self.current_inst = self.decode_opcode(opcode);
+            self.current_inst = self.decode_opcode(self.current_opcode);
         } else if let Some(op) = self.current_inst.pop_front() {
             self.execute_micro_op(op);
         }
@@ -545,7 +577,11 @@ impl Cpu {
 
     fn print_debug_info(&self) {
         print!("{}", CLS);
-        println!("PC: {:04X} | SP: {:02X}", self.pc, self.sp);
+        println!("PC: {:04X} | SP: {:02X} | OP: {:02X}", self.pc, self.sp, self.current_opcode);
+        for i in 0..self.current_inst.len() {
+            print!("{:?}", self.current_inst.get(i));
+            println!();
+        }
         println!(
             "X: {:02X} | Y: {:02X} | A: {:02X}",
             self.index_x, self.index_y, self.accumulator
@@ -1180,7 +1216,7 @@ impl Cpu {
                 // CMP zero page
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPage,
-                    MicroOp::Compare,
+                    MicroOp::CompareAddress,
                     InstType::Read,
                 )
             }
@@ -1188,7 +1224,7 @@ impl Cpu {
                 // CMP zero page + x
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPageX,
-                    MicroOp::Compare,
+                    MicroOp::CompareAddress,
                     InstType::Read,
                 )
             }
@@ -1196,7 +1232,7 @@ impl Cpu {
                 // CMP absolute
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::Absolute,
-                    MicroOp::Compare,
+                    MicroOp::CompareAddress,
                     InstType::Read,
                 )
             }
@@ -1204,7 +1240,7 @@ impl Cpu {
                 // CMP absolute + x
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteX,
-                    MicroOp::Compare,
+                    MicroOp::CompareAddress,
                     InstType::Read,
                 )
             }
@@ -1212,7 +1248,7 @@ impl Cpu {
                 // CMP absolute + y
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteY,
-                    MicroOp::Compare,
+                    MicroOp::CompareAddress,
                     InstType::Read,
                 )
             }
@@ -1220,7 +1256,7 @@ impl Cpu {
                 // CMP indexed indirect
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::IndexedIndirect,
-                    MicroOp::Compare,
+                    MicroOp::CompareAddress,
                     InstType::Read,
                 )
             }
@@ -1228,7 +1264,7 @@ impl Cpu {
                 // CMP indirect indexed
                 Cpu::dispatch_generic_instruction(
                     AddressingMode::IndirectIndexed,
-                    MicroOp::Compare,
+                    MicroOp::CompareAddress,
                     InstType::Read,
                 )
             }
@@ -1890,7 +1926,11 @@ impl Cpu {
                 self.schedule_branch(value, cond, offset);
             }
             MicroOp::TakeBranch(offset) => {
-                let new_addr = self.pc.wrapping_add(offset as u16);
+                let new_addr = if offset & 0x80 == 0x80 {
+                    self.pc.wrapping_add(offset as u16 | 0xFF00)
+                } else {
+                    self.pc.wrapping_add(offset as u16)
+                };
                 self.page_crossed = (self.pc & 0xFF00) != (new_addr & 0xFF00);
                 if self.page_crossed {
                     self.page_crossed = false;

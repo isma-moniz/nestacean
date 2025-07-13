@@ -501,7 +501,7 @@ mod test {
         cpu.tick(); // fetch and decode
         cpu.tick(); // DummyCycle
         cpu.tick(); // PushStatus
-        assert_eq!(cpu.get_memory()[0x01FF], 0b1010_1010);
+        assert_eq!(cpu.get_memory()[0x01FF], 0b1011_1010);
         assert_eq!(cpu.get_sp(), 0xFE);
     }
 

@@ -10,10 +10,8 @@ pub struct NES {
 impl NES {
     pub fn new() -> Self {
         let mut cpu = Cpu::new();
-        let mem: [u8; 3] = [0xA5, 0x00, 0x00];
-        cpu.load_program(&mem);
+        cpu.load_test_game();
         cpu.reset();
-        cpu.mem_write(0, 0x05);
 
         Self { clock: 0, cpu }
     }
