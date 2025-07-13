@@ -1632,6 +1632,16 @@ impl Cpu {
                     MicroOp::FetchInterruptHigh,
                 ])
             }
+            0x40 => {
+                // RTI
+                VecDeque::from(vec![
+                    MicroOp::DummyCycle,
+                    MicroOp::IncrementSP(1),
+                    MicroOp::PullStatus,
+                    MicroOp::PullPCL,
+                    MicroOp::PullPCHPlaceholder,
+                ])
+            }
             _ => unimplemented!("{}", opcode),
         }
     }
@@ -1772,7 +1782,7 @@ impl Cpu {
                 self.current_inst.push_front(MicroOp::ReadAddress);
             }
             Some(other) => panic!("Unexpected micro-op: {:?}", other),
-            None => panic!("No micro-op!"),
+            None => return,
         }
     }
 

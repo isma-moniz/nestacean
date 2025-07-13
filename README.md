@@ -59,4 +59,4 @@ This is a WIP. I had the brilliant idea to make a cicle accurate emulator :D so 
 - [x] SED
 - [x] SEI
 - [x] NOP
-- [ ] RTI
+- [x] RTI
