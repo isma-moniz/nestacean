@@ -9,6 +9,7 @@ const FLAG_CARRY: u8 = 0b0000_0001;
 const FLAG_OVERFLOW: u8 = 0b0100_0000;
 const FLAG_DECIMAL: u8 = 0b0000_1000;
 const FLAG_INTERRUPT: u8 = 0b0000_0100;
+const FLAG_BREAK: u8 = 0b0001_0000;
 const BIT_7: u8 = 0b1000_0000;
 const STACK_PTR_TOP: u8 = 0xFF;
 const STACK_BOTTOM: u16 = 0x0100;
@@ -1973,7 +1974,7 @@ impl Cpu {
                 self.sp = self.sp.wrapping_sub(1);
             }
             MicroOp::PushStatusWithBFlag => {
-                self.status_p |= FLAG_DECIMAL;
+                self.status_p |= FLAG_BREAK;
                 let address = STACK_BOTTOM + self.sp as u16;
                 self.mem_write(address, self.status_p);
                 self.sp = self.sp.wrapping_sub(1);
