@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::io::{self, Write};
 
 const CLS: &str = "\x1B[2J\x1B[1;1H";
@@ -35,8 +34,10 @@ enum InstType {
     Write,
 }
 
+#[derive(Clone, Copy)]
 #[derive(Debug)]
 pub enum MicroOp {
+    None,
     TakeBranch(u8),
     ExclusiveOr,
     ExclusiveOrAddress,
@@ -140,6 +141,52 @@ pub enum MicroOp {
     ClearOverflow,
 }
 
+struct InstructionQueue {
+    ops: [MicroOp; 8],
+    front: usize,
+    back: usize,
+    len: usize,
+}
+
+impl InstructionQueue {
+    fn new() -> Self {
+        Self {
+            ops: [MicroOp::None; 8],
+            front: 0,
+            back: 0,
+            len: 0,
+        }
+    }
+
+    fn push_back(&mut self, op: MicroOp) {
+        self.ops[self.back] = op;
+        self.back = (self.back + 1) % 8;
+        self.len += 1;
+    }
+
+    fn push_front(&mut self, op: MicroOp) {
+        self.front = if self.front == 0 {7} else { self.front - 1 };
+        self.ops[self.front] = op;
+        self.len += 1;
+    }
+
+    fn pop_front(&mut self) -> Option<MicroOp> {
+        if self.len == 0 { return None; }
+        let op = self.ops[self.front];
+        self.front = (self.front + 1) % 8;
+        self.len -= 1;
+        Some(op)
+    }
+
+    fn is_empty(&self) -> bool { self.len == 0}
+
+    fn clear(&mut self) {
+        self.front = 0;
+        self.back = 0;
+        self.len = 0;
+    }
+}
+
 pub struct Cpu {
     accumulator: u8,
     index_x: u8,
@@ -147,7 +194,7 @@ pub struct Cpu {
     pc: u16,
     sp: u8,
     status_p: u8,
-    current_inst: VecDeque<MicroOp>,
+    current_inst: InstructionQueue,
     memory: Box<[u8; 0x10000]>,
     temp_addr: u16,
     page_crossed: bool,
@@ -166,7 +213,7 @@ impl Cpu {
             pc: 0u16,
             sp: 0u8,
             status_p: 0u8,
-            current_inst: VecDeque::new(),
+            current_inst: InstructionQueue::new(),
             memory: Box::new([0u8; 0x10000]),
             temp_addr: 0u16,
             page_crossed: false,
@@ -337,168 +384,175 @@ impl Cpu {
         address_mode: AddressingMode,
         inst: MicroOp,
         inst_type: InstType,
-    ) -> VecDeque<MicroOp> {
+    ) -> InstructionQueue {
+        let mut queue = InstructionQueue::new();
         match address_mode {
             AddressingMode::ZeroPage => match inst_type {
-                InstType::Read => VecDeque::from(vec![MicroOp::FetchZeroPage, inst]),
-                InstType::RMW => VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::ReadAddress,
-                    inst,
-                    MicroOp::WriteToAddressPlaceholder,
-                ]),
-                InstType::Write => VecDeque::from(vec![MicroOp::FetchZeroPage, inst]),
+                InstType::Read => {
+                    queue.push_back(MicroOp::FetchZeroPage);
+                    queue.push_back(inst);
+                }
+                InstType::RMW => {
+                    queue.push_back(MicroOp::FetchZeroPage);
+                    queue.push_back(MicroOp::ReadAddress);
+                    queue.push_back(inst);
+                    queue.push_back(MicroOp::WriteToAddressPlaceholder);
+                }
+                InstType::Write => {
+                    queue.push_back(MicroOp::FetchZeroPage);
+                    queue.push_back(inst);
+                }
             },
             AddressingMode::ZeroPageX => match inst_type {
-                InstType::Read => VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::AddXtoZeroPageAddress,
-                    inst,
-                ]),
-                InstType::RMW => VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::AddXtoZeroPageAddress,
-                    MicroOp::ReadAddress,
-                    inst,
-                    MicroOp::WriteToAddressPlaceholder,
-                ]),
-                InstType::Write => VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::AddXtoZeroPageAddress,
-                    inst,
-                ]),
+                InstType::Read => {
+                    queue.push_back(MicroOp::FetchZeroPage);
+                    queue.push_back(MicroOp::AddXtoZeroPageAddress);
+                    queue.push_back(inst);
+                }
+                InstType::RMW => {
+                    queue.push_back(MicroOp::FetchZeroPage);
+                    queue.push_back(MicroOp::AddXtoZeroPageAddress);
+                    queue.push_back(MicroOp::ReadAddress);
+                    queue.push_back(inst);
+                    queue.push_back(MicroOp::WriteToAddressPlaceholder);
+                }
+                InstType::Write => {
+                    queue.push_back(MicroOp::FetchZeroPage);
+                    queue.push_back(MicroOp::AddXtoZeroPageAddress);
+                    queue.push_back(inst);
+                }
             },
             AddressingMode::ZeroPageY => match inst_type {
-                InstType::Read => VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::AddYtoZeroPageAddress,
-                    inst,
-                ]),
-                InstType::RMW => VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::AddYtoZeroPageAddress,
-                    MicroOp::ReadAddress,
-                    inst,
-                    MicroOp::WriteToAddressPlaceholder,
-                ]),
-                InstType::Write => VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::AddYtoZeroPageAddress,
-                    inst,
-                ]),
+                InstType::Read => {
+                    queue.push_back(MicroOp::FetchZeroPage);
+                    queue.push_back(MicroOp::AddYtoZeroPageAddress);
+                    queue.push_back(inst);
+                }
+                InstType::RMW => {
+                    queue.push_back(MicroOp::FetchZeroPage);
+                    queue.push_back(MicroOp::AddYtoZeroPageAddress);
+                    queue.push_back(MicroOp::ReadAddress);
+                    queue.push_back(inst);
+                    queue.push_back(MicroOp::WriteToAddressPlaceholder);
+                }
+                InstType::Write => {
+                    queue.push_back(MicroOp::FetchZeroPage);
+                    queue.push_back(MicroOp::AddYtoZeroPageAddress);
+                    queue.push_back(inst);
+                }
             },
             AddressingMode::Absolute => match inst_type {
-                InstType::Read => VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByte,
-                    inst,
-                ]),
-                InstType::RMW => VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByte,
-                    MicroOp::ReadAddress,
-                    inst,
-                    MicroOp::WriteToAddressPlaceholder,
-                ]),
-                InstType::Write => VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByte,
-                    inst,
-                ]),
+                InstType::Read => {
+                    queue.push_back(MicroOp::FetchLowAddrByte);
+                    queue.push_back(MicroOp::FetchHighAddrByte);
+                    queue.push_back(inst);
+                }
+                InstType::RMW => {
+                    queue.push_back(MicroOp::FetchLowAddrByte);
+                    queue.push_back(MicroOp::FetchHighAddrByte);
+                    queue.push_back(MicroOp::ReadAddress);
+                    queue.push_back(inst);
+                    queue.push_back(MicroOp::WriteToAddressPlaceholder);
+                }
+                InstType::Write => {
+                    queue.push_back(MicroOp::FetchLowAddrByte);
+                    queue.push_back(MicroOp::FetchHighAddrByte);
+                    queue.push_back(inst);
+                }
             },
             AddressingMode::AbsoluteX => match inst_type {
-                InstType::Read => VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByteWithX, // might add dummy cycle
-                    inst,
-                ]),
-                InstType::RMW => VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByteWithX,
-                    MicroOp::DummyCycle, // always happens with this instruction, "fixing the
-                    // address"
-                    MicroOp::ReadAddress,
-                    inst,
-                    MicroOp::WriteToAddressPlaceholder,
-                ]),
-                InstType::Write => VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByteWithX,
-                    MicroOp::DummyCycle, // read and fix
-                    inst,
-                ]),
+                InstType::Read => {
+                    queue.push_back(MicroOp::FetchLowAddrByte);
+                    queue.push_back(MicroOp::FetchHighAddrByteWithX);
+                    queue.push_back(inst);
+                }
+                InstType::RMW => {
+                    queue.push_back(MicroOp::FetchLowAddrByte);
+                    queue.push_back(MicroOp::FetchHighAddrByteWithX);
+                    queue.push_back(MicroOp::DummyCycle);
+                    queue.push_back(MicroOp::ReadAddress);
+                    queue.push_back(inst);
+                    queue.push_back(MicroOp::WriteToAddressPlaceholder);
+                }
+                InstType::Write => {
+                    queue.push_back(MicroOp::FetchLowAddrByte);
+                    queue.push_back(MicroOp::FetchHighAddrByteWithX);
+                    queue.push_back(MicroOp::DummyCycle);
+                    queue.push_back(inst);
+                }
             },
             AddressingMode::AbsoluteY => match inst_type {
-                InstType::Read => VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByteWithY, // might add dummy cycle
-                    inst,
-                ]),
-                InstType::RMW => VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByteWithY,
-                    MicroOp::DummyCycle, // always happens with this instruction
-                    MicroOp::ReadAddress,
-                    inst,
-                    MicroOp::WriteToAddressPlaceholder,
-                ]),
-                InstType::Write => VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByteWithY,
-                    MicroOp::DummyCycle, // read and fix
-                    inst,
-                ]),
+                InstType::Read => {
+                    queue.push_back(MicroOp::FetchLowAddrByte);
+                    queue.push_back(MicroOp::FetchHighAddrByteWithY);
+                    queue.push_back(inst);
+                }
+                InstType::RMW => {
+                    queue.push_back(MicroOp::FetchLowAddrByte);
+                    queue.push_back(MicroOp::FetchHighAddrByteWithY);
+                    queue.push_back(MicroOp::DummyCycle);
+                    queue.push_back(MicroOp::ReadAddress);
+                    queue.push_back(inst);
+                    queue.push_back(MicroOp::WriteToAddressPlaceholder);
+                }
+                InstType::Write => {
+                    queue.push_back(MicroOp::FetchLowAddrByte);
+                    queue.push_back(MicroOp::FetchHighAddrByteWithY);
+                    queue.push_back(MicroOp::DummyCycle);
+                    queue.push_back(inst);
+                }
             },
             AddressingMode::IndexedIndirect => match inst_type {
-                InstType::Read => VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::AddXtoPointer,
-                    MicroOp::FetchPointerLowByte,
-                    MicroOp::FetchPointerHighBytePlaceholder,
-                    inst,
-                ]),
-                InstType::RMW => VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::AddXtoPointer,
-                    MicroOp::FetchPointerLowByte,
-                    MicroOp::FetchPointerHighBytePlaceholder,
-                    MicroOp::ReadAddress,
-                    inst,
-                    MicroOp::WriteToAddressPlaceholder,
-                ]),
-                InstType::Write => VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::AddXtoPointer,
-                    MicroOp::FetchPointerLowByte,
-                    MicroOp::FetchPointerHighBytePlaceholder,
-                    inst,
-                ]),
+                InstType::Read => {
+                    queue.push_back(MicroOp::FetchZeroPage);
+                    queue.push_back(MicroOp::AddXtoPointer);
+                    queue.push_back(MicroOp::FetchPointerLowByte);
+                    queue.push_back(MicroOp::FetchPointerHighBytePlaceholder);
+                    queue.push_back(inst);
+                }
+                InstType::RMW => {
+                    queue.push_back(MicroOp::FetchZeroPage);
+                    queue.push_back(MicroOp::AddXtoPointer);
+                    queue.push_back(MicroOp::FetchPointerLowByte);
+                    queue.push_back(MicroOp::FetchPointerHighBytePlaceholder);
+                    queue.push_back(MicroOp::ReadAddress);
+                    queue.push_back(inst);
+                    queue.push_back(MicroOp::WriteToAddressPlaceholder);
+                }
+                InstType::Write => {
+                    queue.push_back(MicroOp::FetchZeroPage);
+                    queue.push_back(MicroOp::AddXtoPointer);
+                    queue.push_back(MicroOp::FetchPointerLowByte);
+                    queue.push_back(MicroOp::FetchPointerHighBytePlaceholder);
+                    queue.push_back(inst);
+                }
             },
             AddressingMode::IndirectIndexed => match inst_type {
-                InstType::Read => VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::FetchPointerLowByte,
-                    MicroOp::FetchPointerHighByteWithYPlaceholder, // may add dummy cycle
-                    inst,
-                ]),
-                InstType::RMW => VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::FetchPointerLowByte,
-                    MicroOp::FetchPointerHighByteWithYPlaceholder,
-                    MicroOp::FixAddressPlaceholder,
-                    MicroOp::ReadAddress,
-                    inst,
-                    MicroOp::WriteToAddressPlaceholder,
-                ]),
-                InstType::Write => VecDeque::from(vec![
-                    MicroOp::FetchZeroPage,
-                    MicroOp::FetchPointerLowByte,
-                    MicroOp::FetchPointerHighByteWithYPlaceholder,
-                    MicroOp::DummyCycle, // read from effective address, fix high byte of effective address
-                    inst,
-                ]),
+                InstType::Read => {
+                    queue.push_back(MicroOp::FetchZeroPage);
+                    queue.push_back(MicroOp::FetchPointerLowByte);
+                    queue.push_back(MicroOp::FetchPointerHighByteWithYPlaceholder);
+                    queue.push_back(inst);
+                }
+                InstType::RMW => {
+                    queue.push_back(MicroOp::FetchZeroPage);
+                    queue.push_back(MicroOp::FetchPointerLowByte);
+                    queue.push_back(MicroOp::FetchPointerHighByteWithYPlaceholder);
+                    queue.push_back(MicroOp::FixAddressPlaceholder);
+                    queue.push_back(MicroOp::ReadAddress);
+                    queue.push_back(inst);
+                    queue.push_back(MicroOp::WriteToAddressPlaceholder);
+                }
+                InstType::Write => {
+                    queue.push_back(MicroOp::FetchZeroPage);
+                    queue.push_back(MicroOp::FetchPointerLowByte);
+                    queue.push_back(MicroOp::FetchPointerHighByteWithYPlaceholder);
+                    queue.push_back(MicroOp::DummyCycle);
+                    queue.push_back(inst);
+                }
             },
         }
+        queue
     }
 
     //TODO: might be redundant to have this and the self initializer. see load_program
@@ -510,7 +564,7 @@ impl Cpu {
         self.status_p = 0;
         self.temp_addr = 0;
         self.page_crossed = false;
-        self.current_inst = VecDeque::new();
+        self.current_inst = InstructionQueue::new();
         self.pc = self.mem_read_u16(PC_INIT_LOCATION);
         self.running = true;
     }
@@ -593,7 +647,7 @@ impl Cpu {
 
     fn execute_current_cycle(&mut self) {
         if self.current_inst.is_empty() {
-            self.current_opcode = self.memory[self.pc as usize];
+            self.current_opcode = self.mem_read(self.pc);
             self.pc += 1;
             self.current_inst = self.decode_opcode(self.current_opcode);
         } else if let Some(op) = self.current_inst.pop_front() {
@@ -607,8 +661,8 @@ impl Cpu {
             "PC: {:04X} | SP: {:02X} | OP: {:02X}",
             self.pc, self.sp, self.current_opcode
         );
-        for i in 0..self.current_inst.len() {
-            print!("{:?}", self.current_inst.get(i));
+        for i in 0..self.current_inst.len {
+            print!("{:?}", self.current_inst.ops[i]);
             println!();
         }
         println!(
@@ -632,15 +686,16 @@ impl Cpu {
         println!("");
     }
 
-    fn decode_opcode(&mut self, opcode: u8) -> VecDeque<MicroOp> {
+    fn decode_opcode(&mut self, opcode: u8) -> InstructionQueue {
+        let mut queue = InstructionQueue::new();
         match opcode {
             0xA9 => {
                 // LDA
-                VecDeque::from(vec![MicroOp::LoadAccumulator])
+                queue.push_back(MicroOp::LoadAccumulator);
             }
             0xA5 => {
                 // LDA zero page
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPage,
                     MicroOp::LoadAccumulatorFromAddress,
                     InstType::Read,
@@ -648,7 +703,7 @@ impl Cpu {
             }
             0xB5 => {
                 // LDA zero page + x
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPageX,
                     MicroOp::LoadAccumulatorFromAddress,
                     InstType::Read,
@@ -656,1059 +711,1042 @@ impl Cpu {
             }
             0xAD => {
                 // LDA absolute
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::Absolute,
                     MicroOp::LoadAccumulatorFromAddress,
                     InstType::Read,
-                )
+                );
             }
             0xBD => {
                 // LDA absolute + x
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteX,
                     MicroOp::LoadAccumulatorFromAddress,
                     InstType::Read,
-                )
+                );
             }
             0xB9 => {
                 // LDA absolute + y
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteY,
                     MicroOp::LoadAccumulatorFromAddress,
                     InstType::Read,
-                )
+                );
             }
             0xA1 => {
                 // LDA indexed indirect
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::IndexedIndirect,
                     MicroOp::LoadAccumulatorFromAddress,
                     InstType::Read,
-                )
+                );
             }
             0xB1 => {
                 // LDA indirect indexed
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::IndirectIndexed,
                     MicroOp::LoadAccumulatorFromAddress,
                     InstType::Read,
-                )
+                );
             }
             0xA2 => {
                 // LDX
-                VecDeque::from(vec![MicroOp::LoadX])
+                queue.push_back(MicroOp::LoadX);
             }
             0xA6 => {
                 // LDX zero page
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPage,
                     MicroOp::LoadXfromAddress,
                     InstType::Read,
-                )
+                );
             }
             0xB6 => {
                 // LDX zero page + y
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPageY,
                     MicroOp::LoadXfromAddress,
                     InstType::Read,
-                )
+                );
             }
             0xAE => {
                 // LDX absolute
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::Absolute,
                     MicroOp::LoadXfromAddress,
                     InstType::Read,
-                )
+                );
             }
             0xBE => {
                 // LDX absolute + y
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteY,
                     MicroOp::LoadXfromAddress,
                     InstType::Read,
-                )
+                );
             }
             0xA0 => {
                 // LDY immediate
-                VecDeque::from(vec![MicroOp::LoadY])
+                queue.push_back(MicroOp::LoadY);
             }
             0xA4 => {
                 // LDY zero page
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPage,
                     MicroOp::LoadYfromAddress,
                     InstType::Read,
-                )
+                );
             }
             0xB4 => {
                 // LDY zero page + x
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPageY,
                     MicroOp::LoadYfromAddress,
                     InstType::Read,
-                )
+                );
             }
             0xAC => {
                 // LDY absolute
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::Absolute,
                     MicroOp::LoadYfromAddress,
                     InstType::Read,
-                )
+                );
             }
             0xBC => {
                 // LDY absolute + x
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteX,
                     MicroOp::LoadYfromAddress,
                     InstType::Read,
-                )
+                );
             }
             0x85 => {
                 // STA zero page
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPage,
                     MicroOp::StoreAccumulator,
                     InstType::Write,
-                )
+                );
             }
             0x95 => {
                 // STA zero page + x
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPageX,
                     MicroOp::StoreAccumulator,
                     InstType::Write,
-                )
+                );
             }
             0x8D => {
                 // STA absolute
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::Absolute,
                     MicroOp::StoreAccumulator,
                     InstType::Write,
-                )
+                );
             }
             0x9D => {
                 // STA absolute + x
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteX,
                     MicroOp::StoreAccumulator,
                     InstType::Write,
-                )
+                );
             }
             0x99 => {
                 // STA absolute + y
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteY,
                     MicroOp::StoreAccumulator,
                     InstType::Write,
-                )
+                );
             }
             0x81 => {
                 // STA indexed indirect
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::IndexedIndirect,
                     MicroOp::StoreAccumulator,
                     InstType::Write,
-                )
+                );
             }
             0x91 => {
                 //STA indirect indexed
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::IndirectIndexed,
                     MicroOp::StoreAccumulator,
                     InstType::Write,
-                )
+                );
             }
             0x86 => {
                 // STX zero page
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPage,
                     MicroOp::StoreX,
                     InstType::Write,
-                )
+                );
             }
             0x96 => {
                 // STX zero page + y
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPageY,
                     MicroOp::StoreX,
                     InstType::Write,
-                )
+                );
             }
             0x8E => {
                 // STX absolute
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::Absolute,
                     MicroOp::StoreX,
                     InstType::Write,
-                )
+                );
             }
             0x84 => {
                 // STY zero page
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPage,
                     MicroOp::StoreY,
                     InstType::Write,
-                )
+                );
             }
             0x94 => {
                 // STY zero page + x
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPageX,
                     MicroOp::StoreY,
                     InstType::Write,
-                )
+                );
             }
             0x8C => {
                 // STY absolute
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::Absolute,
                     MicroOp::StoreY,
                     InstType::Write,
-                )
+                );
             }
             0xAA => {
                 // TAX
-                VecDeque::from(vec![MicroOp::LoadXAccumulator])
+                queue.push_back(MicroOp::LoadXAccumulator);
             }
             0xA8 => {
                 // TAY
-                VecDeque::from(vec![MicroOp::LoadYAccumulator])
+                queue.push_back(MicroOp::LoadYAccumulator);
             }
             0xBA => {
                 // TSX
-                VecDeque::from(vec![MicroOp::LoadXStackPointer])
+                queue.push_back(MicroOp::LoadXStackPointer);
             }
             0x8A => {
                 // TXA
-                VecDeque::from(vec![MicroOp::LoadAccumulatorX])
+                queue.push_back(MicroOp::LoadAccumulatorX);
             }
             0x9A => {
                 // TXS
-                VecDeque::from(vec![MicroOp::LoadStackPointerX])
+                queue.push_back(MicroOp::LoadStackPointerX);
             }
             0x98 => {
                 // TYA
-                VecDeque::from(vec![MicroOp::LoadAccumulatorY])
+                queue.push_back(MicroOp::LoadAccumulatorY);
             }
             0x48 => {
                 // PHA
-                VecDeque::from(vec![
-                    MicroOp::DummyCycle, // reads next inst byte, throws it away
-                    MicroOp::PushAccumulator,
-                ])
+                queue.push_back(MicroOp::DummyCycle);
+                queue.push_back(MicroOp::PushAccumulator);
             }
             0x08 => {
                 // PHP
-                VecDeque::from(vec![MicroOp::DummyCycle, MicroOp::PushStatusBrkPhp])
+                queue.push_back(MicroOp::DummyCycle);
+                queue.push_back(MicroOp::PushStatusBrkPhp);
             }
             0x68 => {
                 // PLA
-                VecDeque::from(vec![
-                    MicroOp::DummyCycle,
-                    MicroOp::IncrementSP(1),
-                    MicroOp::PullAccumulator,
-                ])
+                queue.push_back(MicroOp::DummyCycle);
+                queue.push_back(MicroOp::IncrementSP(1));
+                queue.push_back(MicroOp::PullAccumulator);
             }
             0x28 => {
                 // PLP
-                VecDeque::from(vec![
-                    MicroOp::DummyCycle,
-                    MicroOp::IncrementSP(1),
-                    MicroOp::PullStatus,
-                ])
+                queue.push_back(MicroOp::DummyCycle);
+                queue.push_back(MicroOp::IncrementSP(1));
+                queue.push_back(MicroOp::PullStatus);
             }
             0x29 => {
                 // AND Immediate
-                VecDeque::from(vec![MicroOp::LogicalAnd])
+                queue.push_back(MicroOp::LogicalAnd);
             }
             0x25 => {
                 // AND zero page
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPage,
                     MicroOp::LogicalAndAddress,
                     InstType::Read,
-                )
+                );
             }
             0x35 => {
                 // AND zero page + x
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPageX,
                     MicroOp::LogicalAndAddress,
                     InstType::Read,
-                )
+                );
             }
             0x2D => {
                 // AND absolute
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::Absolute,
                     MicroOp::LogicalAndAddress,
                     InstType::Read,
-                )
+                );
             }
             0x3D => {
                 // AND absolute + x
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteX,
                     MicroOp::LogicalAndAddress,
                     InstType::Read,
-                )
+                );
             }
             0x39 => {
                 // AND absolute + y
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteY,
                     MicroOp::LogicalAndAddress,
                     InstType::Read,
-                )
+                );
             }
             0x21 => {
                 // AND indexed indirect
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::IndexedIndirect,
                     MicroOp::LogicalAndAddress,
                     InstType::Read,
-                )
+                );
             }
             0x31 => {
                 // AND indirect indexed
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::IndirectIndexed,
                     MicroOp::LogicalAndAddress,
                     InstType::Read,
-                )
+                );
             }
             0x49 => {
                 // EOR immediate
-                VecDeque::from(vec![MicroOp::ExclusiveOr])
+                queue.push_back(MicroOp::ExclusiveOr);
             }
             0x45 => {
                 // EOR zero page
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPage,
                     MicroOp::ExclusiveOrAddress,
                     InstType::Read,
-                )
+                );
             }
             0x55 => {
                 // EOR zero page + x
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPageX,
                     MicroOp::ExclusiveOrAddress,
                     InstType::Read,
-                )
+                );
             }
             0x4D => {
                 // EOR absolute
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::Absolute,
                     MicroOp::ExclusiveOrAddress,
                     InstType::Read,
-                )
+                );
             }
             0x5D => {
                 // EOR absolute + x
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteX,
                     MicroOp::ExclusiveOrAddress,
                     InstType::Read,
-                )
+                );
             }
             0x59 => {
                 // EOR absolute + y
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteY,
                     MicroOp::ExclusiveOrAddress,
                     InstType::Read,
-                )
+                );
             }
             0x41 => {
                 // EOR indexed indirect
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::IndexedIndirect,
                     MicroOp::ExclusiveOrAddress,
                     InstType::Read,
-                )
+                );
             }
             0x51 => {
                 // EOR indirect indexed
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::IndirectIndexed,
                     MicroOp::ExclusiveOrAddress,
                     InstType::Read,
-                )
+                );
             }
             0x09 => {
                 // ORA immediate
-                VecDeque::from(vec![MicroOp::InclusiveOr])
+                queue.push_back(MicroOp::InclusiveOr);
             }
             0x05 => {
                 // ORA zero page
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPage,
                     MicroOp::InclusiveOrAddress,
                     InstType::Read,
-                )
+                );
             }
             0x15 => {
                 // ORA zero page + x
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPageX,
                     MicroOp::InclusiveOrAddress,
                     InstType::Read,
-                )
+                );
             }
             0x0D => {
                 // ORA absolute
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::Absolute,
                     MicroOp::InclusiveOrAddress,
                     InstType::Read,
-                )
+                );
             }
             0x1D => {
                 // ORA absolute + x
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteX,
                     MicroOp::InclusiveOrAddress,
                     InstType::Read,
-                )
+                );
             }
             0x19 => {
                 // ORA absolute + y
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteY,
                     MicroOp::InclusiveOrAddress,
                     InstType::Read,
-                )
+                );
             }
             0x01 => {
                 // ORA indexed indirect
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::IndexedIndirect,
                     MicroOp::InclusiveOrAddress,
                     InstType::Read,
-                )
+                );
             }
             0x11 => {
                 // ORA indirect indexed
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::IndirectIndexed,
                     MicroOp::InclusiveOrAddress,
                     InstType::Read,
-                )
+                );
             }
             0x24 => {
                 // BIT zero page
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPage,
                     MicroOp::BitTestAddress,
                     InstType::Read,
-                )
+                );
             }
             0x2C => {
                 // BIT absolute
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::Absolute,
                     MicroOp::BitTestAddress,
                     InstType::Read,
-                )
+                );
             }
             0x69 => {
                 // ADC
-                VecDeque::from(vec![MicroOp::AddWithCarry])
+                queue.push_back(MicroOp::AddWithCarry);
             }
             0x65 => {
                 // ADC zero page
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPage,
                     MicroOp::AddWithCarryAddress,
                     InstType::Read,
-                )
+                );
             }
             0x75 => {
                 // ADC zero page + x
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPageX,
                     MicroOp::AddWithCarryAddress,
                     InstType::Read,
-                )
+                );
             }
             0x6D => {
                 // ADC absolute
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::Absolute,
                     MicroOp::AddWithCarryAddress,
                     InstType::Read,
-                )
+                );
             }
             0x7D => {
                 // ADC absolute + x
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteX,
                     MicroOp::AddWithCarryAddress,
                     InstType::Read,
-                )
+                );
             }
             0x79 => {
                 // ADC absolute + y
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteY,
                     MicroOp::AddWithCarryAddress,
                     InstType::Read,
-                )
+                );
             }
             0x61 => {
                 // ADC indexed indirect
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::IndexedIndirect,
                     MicroOp::AddWithCarryAddress,
                     InstType::Read,
-                )
+                );
             }
             0x71 => {
                 // ADC indirect indexed
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::IndirectIndexed,
                     MicroOp::AddWithCarryAddress,
                     InstType::Read,
-                )
+                );
             }
             0xE9 => {
                 // SBC
-                VecDeque::from(vec![MicroOp::SubWithCarry])
+                queue.push_back(MicroOp::SubWithCarry);
             }
             0xE5 => {
                 // SBC zero page
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPage,
                     MicroOp::SubWithCarryAddress,
                     InstType::Read,
-                )
+                );
             }
             0xF5 => {
                 // SBC zero page + x
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPageX,
                     MicroOp::SubWithCarryAddress,
                     InstType::Read,
-                )
+                );
             }
             0xED => {
                 // SBC absolute
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::Absolute,
                     MicroOp::SubWithCarryAddress,
                     InstType::Read,
-                )
+                );
             }
             0xFD => {
                 // SBC absolute + x
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteX,
                     MicroOp::SubWithCarryAddress,
                     InstType::Read,
-                )
+                );
             }
             0xF9 => {
                 // SBC absolute + y
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteY,
                     MicroOp::SubWithCarryAddress,
                     InstType::Read,
-                )
+                );
             }
             0xE1 => {
                 // SBC indexed indirect
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::IndexedIndirect,
                     MicroOp::SubWithCarryAddress,
                     InstType::Read,
-                )
+                );
             }
             0xF1 => {
                 // SBC indirect indexed
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::IndirectIndexed,
                     MicroOp::SubWithCarryAddress,
                     InstType::Read,
-                )
+                );
             }
             0xC9 => {
                 // CMP
-                VecDeque::from(vec![MicroOp::Compare])
+                queue.push_back(MicroOp::Compare);
             }
             0xC5 => {
                 // CMP zero page
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPage,
                     MicroOp::CompareAddress,
                     InstType::Read,
-                )
+                );
             }
             0xD5 => {
                 // CMP zero page + x
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPageX,
                     MicroOp::CompareAddress,
                     InstType::Read,
-                )
+                );
             }
             0xCD => {
                 // CMP absolute
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::Absolute,
                     MicroOp::CompareAddress,
                     InstType::Read,
-                )
+                );
             }
             0xDD => {
                 // CMP absolute + x
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteX,
                     MicroOp::CompareAddress,
                     InstType::Read,
-                )
+                );
             }
             0xD9 => {
                 // CMP absolute + y
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteY,
                     MicroOp::CompareAddress,
                     InstType::Read,
-                )
+                );
             }
             0xC1 => {
                 // CMP indexed indirect
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::IndexedIndirect,
                     MicroOp::CompareAddress,
                     InstType::Read,
-                )
+                );
             }
             0xD1 => {
                 // CMP indirect indexed
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::IndirectIndexed,
                     MicroOp::CompareAddress,
                     InstType::Read,
-                )
+                );
             }
             0xE0 => {
                 // CPX
-                VecDeque::from(vec![MicroOp::CompareX])
+                queue.push_back(MicroOp::CompareX);
             }
             0xE4 => {
                 // CPX zero page
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPage,
                     MicroOp::CompareXAddress,
                     InstType::Read,
-                )
+                );
             }
             0xEC => {
                 // CPX absolute
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::Absolute,
                     MicroOp::CompareXAddress,
                     InstType::Read,
-                )
+                );
             }
             0xC0 => {
                 // CPY
-                VecDeque::from(vec![MicroOp::CompareY])
+                queue.push_back(MicroOp::CompareY);
             }
             0xC4 => {
                 // CPY zero page
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPage,
                     MicroOp::CompareYAddress,
                     InstType::Read,
-                )
+                );
             }
             0xCC => {
                 // CPY absolute
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::Absolute,
                     MicroOp::CompareYAddress,
                     InstType::Read,
-                )
+                );
             }
             0x0A => {
                 // ASL
-                VecDeque::from(vec![MicroOp::ArithmeticShiftLeft])
+                queue.push_back(MicroOp::ArithmeticShiftLeft);
             }
             0x06 => {
                 // ASL zero page
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPage,
                     MicroOp::ArithmeticShiftLeftAddress(None),
                     InstType::RMW,
-                )
+                );
             }
             0x16 => {
                 // ASL zero page + x
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPageX,
                     MicroOp::ArithmeticShiftLeftAddress(None),
                     InstType::RMW,
-                )
+                );
             }
             0x0E => {
                 // ASL absolute
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::Absolute,
                     MicroOp::ArithmeticShiftLeftAddress(None),
                     InstType::RMW,
-                )
+                );
             }
             0x1E => {
                 // ASL absolute + x
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteX,
                     MicroOp::ArithmeticShiftLeftAddress(None),
                     InstType::RMW,
-                )
+                );
             }
             0x4A => {
                 // LSR
-                VecDeque::from(vec![MicroOp::LogicalShiftRight])
+                queue.push_back(MicroOp::LogicalShiftRight);
             }
             0x46 => {
                 // LSR zero page
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPage,
                     MicroOp::LogicalShiftRightAddress(None),
                     InstType::RMW,
-                )
+                );
             }
             0x56 => {
                 // LSR zero page + x
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPageX,
                     MicroOp::LogicalShiftRightAddress(None),
                     InstType::RMW,
-                )
+                );
             }
             0x4E => {
                 // LSR absolute
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::Absolute,
                     MicroOp::LogicalShiftRightAddress(None),
                     InstType::RMW,
-                )
+                );
             }
             0x5E => {
                 // LSR absolute + x
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteX,
                     MicroOp::LogicalShiftRightAddress(None),
                     InstType::RMW,
-                )
+                );
             }
             0x2A => {
                 // ROL
-                VecDeque::from(vec![MicroOp::RotateLeft])
+                queue.push_back(MicroOp::RotateLeft);
             }
             0x26 => {
                 // ROL zero page
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPage,
                     MicroOp::RotateLeftAddress(None),
                     InstType::RMW,
-                )
+                );
             }
             0x36 => {
                 // ROL zero page + x
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPageX,
                     MicroOp::RotateLeftAddress(None),
                     InstType::RMW,
-                )
+                );
             }
             0x2E => {
                 // ROL absolute
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::Absolute,
                     MicroOp::RotateLeftAddress(None),
                     InstType::RMW,
-                )
+                );
             }
             0x3E => {
                 // ROL absolute + x
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteX,
                     MicroOp::RotateLeftAddress(None),
                     InstType::RMW,
-                )
+                );
             }
             0x6A => {
                 // ROR
-                VecDeque::from(vec![MicroOp::RotateRight])
+                queue.push_back(MicroOp::RotateRight);
             }
             0x66 => {
                 // ROR zero page
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPage,
                     MicroOp::RotateRightAddress(None),
                     InstType::RMW,
-                )
+                );
             }
             0x76 => {
                 // ROR zero page + x
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPageX,
                     MicroOp::RotateRightAddress(None),
                     InstType::RMW,
-                )
+                );
             }
             0x6E => {
                 // ROR absolute
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::Absolute,
                     MicroOp::RotateRightAddress(None),
                     InstType::RMW,
-                )
+                );
             }
             0x7E => {
                 // ROR absolute + x
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteX,
                     MicroOp::RotateRightAddress(None),
                     InstType::RMW,
-                )
+                );
             }
             0xE6 => {
                 // INC zero page
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPage,
                     MicroOp::WriteBackAndIncrementPlaceholder,
                     InstType::RMW,
-                )
+                );
             }
             0xF6 => {
                 // INC zero page + x
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPageX,
                     MicroOp::WriteBackAndIncrementPlaceholder,
                     InstType::RMW,
-                )
+                );
             }
             0xEE => {
                 // INC absolute
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::Absolute,
                     MicroOp::WriteBackAndIncrementPlaceholder,
                     InstType::RMW,
-                )
+                );
             }
             0xFE => {
                 // INC absolute + x
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteX,
                     MicroOp::WriteBackAndIncrementPlaceholder,
                     InstType::RMW,
-                )
+                );
             }
             0xE8 => {
                 // INX
-                VecDeque::from(vec![MicroOp::IncrementX])
+                queue.push_back(MicroOp::IncrementX);
             }
             0xCA => {
                 // DEX
-                VecDeque::from(vec![MicroOp::DecrementX])
+                queue.push_back(MicroOp::DecrementX);
             }
             0xC8 => {
                 // INY
-                VecDeque::from(vec![MicroOp::IncrementY])
+                queue.push_back(MicroOp::IncrementY);
             }
             0x88 => {
                 // DEY
-                VecDeque::from(vec![MicroOp::DecrementY])
+                queue.push_back(MicroOp::DecrementY);
             }
             0xC6 => {
                 // DEC zero page
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPage,
                     MicroOp::WriteBackAndDecrementPlaceholder,
                     InstType::RMW,
-                )
+                );
             }
             0xD6 => {
                 // DEC zero page + x
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::ZeroPageX,
                     MicroOp::WriteBackAndDecrementPlaceholder,
                     InstType::RMW,
-                )
+                );
             }
             0xCE => {
                 // DEC absolute
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::Absolute,
                     MicroOp::WriteBackAndDecrementPlaceholder,
                     InstType::RMW,
-                )
+                );
             }
             0xDE => {
                 // DEC absolute + x
-                Cpu::dispatch_generic_instruction(
+                return Cpu::dispatch_generic_instruction(
                     AddressingMode::AbsoluteX,
                     MicroOp::WriteBackAndDecrementPlaceholder,
                     InstType::RMW,
-                )
+                );
             }
             0x4C => {
                 // JMP absolute
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::CopyLowFetchHightoPC,
-                ])
+                queue.push_back(MicroOp::FetchLowAddrByte);
+                queue.push_back(MicroOp::CopyLowFetchHightoPC);
             }
             0x6C => {
                 // JMP indirect
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::FetchHighAddrByte,
-                    MicroOp::ReadLowFromIndirect,
-                    MicroOp::ReadHighFromIndirectPlaceholder,
-                ])
+                queue.push_back(MicroOp::FetchLowAddrByte);
+                queue.push_back(MicroOp::FetchHighAddrByte);
+                queue.push_back(MicroOp::ReadLowFromIndirect);
+                queue.push_back(MicroOp::ReadHighFromIndirectPlaceholder);
             }
             0x20 => {
                 // JSR
-                VecDeque::from(vec![
-                    MicroOp::FetchLowAddrByte,
-                    MicroOp::DummyCycle, //TODO: this isn't actually performing a dummy read. see
-                    //if it brings problems.
-                    MicroOp::PushPCH,
-                    MicroOp::PushPCL,
-                    MicroOp::CopyLowFetchHightoPC,
-                ])
+                queue.push_back(MicroOp::FetchLowAddrByte);
+                queue.push_back(MicroOp::DummyCycle); //TODO: this isn't actually performing a dummy read. see if it brings problems.
+                queue.push_back(MicroOp::PushPCH);
+                queue.push_back(MicroOp::PushPCL);
+                queue.push_back(MicroOp::CopyLowFetchHightoPC);
             }
             0x60 => {
                 // RTS
-                VecDeque::from(vec![
-                    MicroOp::DummyCycle,
-                    MicroOp::IncrementSP(1),
-                    MicroOp::PullPCL,
-                    MicroOp::PullPCHPlaceholder,
-                    MicroOp::IncrementPCPlaceholder,
-                ])
+                queue.push_back(MicroOp::DummyCycle);
+                queue.push_back(MicroOp::IncrementSP(1));
+                queue.push_back(MicroOp::PullPCL);
+                queue.push_back(MicroOp::PullPCHPlaceholder);
+                queue.push_back(MicroOp::IncrementPCPlaceholder);
             }
             0x90 => {
                 // BCC
-                VecDeque::from(vec![MicroOp::FetchRelativeOffset(
+                queue.push_back(MicroOp::FetchRelativeOffset(
                     self.status_p & FLAG_CARRY,
                     0x00,
-                )])
+                ));
             }
             0xB0 => {
                 // BCS
-                VecDeque::from(vec![MicroOp::FetchRelativeOffset(
+                queue.push_back(MicroOp::FetchRelativeOffset(
                     self.status_p & FLAG_CARRY,
                     FLAG_CARRY,
-                )])
+                ));
             }
             0xF0 => {
                 // BEQ
-                VecDeque::from(vec![MicroOp::FetchRelativeOffset(
+                queue.push_back(MicroOp::FetchRelativeOffset(
                     self.status_p & FLAG_ZERO,
                     FLAG_ZERO,
-                )])
+                ));
             }
             0xD0 => {
                 // BNE
-                VecDeque::from(vec![MicroOp::FetchRelativeOffset(
+                queue.push_back(MicroOp::FetchRelativeOffset(
                     self.status_p & FLAG_ZERO,
                     0x00,
-                )])
+                ));
             }
             0x30 => {
                 // BMI
-                VecDeque::from(vec![MicroOp::FetchRelativeOffset(
+                queue.push_back(MicroOp::FetchRelativeOffset(
                     self.status_p & FLAG_NEGATIVE,
                     FLAG_NEGATIVE,
-                )])
+                ));
             }
             0x10 => {
                 // BPL
-                VecDeque::from(vec![MicroOp::FetchRelativeOffset(
+                queue.push_back(MicroOp::FetchRelativeOffset(
                     self.status_p & FLAG_NEGATIVE,
                     0x00,
-                )])
+                ));
             }
             0x50 => {
                 // BVC
-                VecDeque::from(vec![MicroOp::FetchRelativeOffset(
+                queue.push_back(MicroOp::FetchRelativeOffset(
                     self.status_p & FLAG_OVERFLOW,
                     0x00,
-                )])
+                ));
             }
             0x70 => {
                 // BVS
-                VecDeque::from(vec![MicroOp::FetchRelativeOffset(
+                queue.push_back(MicroOp::FetchRelativeOffset(
                     self.status_p & FLAG_OVERFLOW,
                     FLAG_OVERFLOW,
-                )])
+                ));
             }
             0x18 => {
                 // CLC
-                VecDeque::from(vec![MicroOp::ClearCarry])
+                queue.push_back(MicroOp::ClearCarry);
             }
             0x38 => {
                 // SEC
-                VecDeque::from(vec![MicroOp::SetCarry])
+                queue.push_back(MicroOp::SetCarry);
             }
             0xD8 => {
                 // CLD
-                VecDeque::from(vec![MicroOp::ClearDecimalMode])
+                queue.push_back(MicroOp::ClearDecimalMode);
             }
             0xF8 => {
                 // SED
-                VecDeque::from(vec![MicroOp::SetDecimalMode])
+                queue.push_back(MicroOp::SetDecimalMode);
             }
             0x78 => {
                 // SEI
-                VecDeque::from(vec![MicroOp::SetInterrupt])
+                queue.push_back(MicroOp::SetInterrupt);
             }
             0x58 => {
                 // CLI
-                VecDeque::from(vec![MicroOp::ClearInterrupt])
+                queue.push_back(MicroOp::ClearInterrupt);
             }
             0xB8 => {
                 // CLV
-                VecDeque::from(vec![MicroOp::ClearOverflow])
+                queue.push_back(MicroOp::ClearOverflow);
             }
             0xEA => {
                 // NOP
-                VecDeque::from(vec![MicroOp::DummyCycle])
+                queue.push_back(MicroOp::DummyCycle);
             }
             0x00 => {
                 // BRK
-                VecDeque::from(vec![
-                    MicroOp::IncrementPC(Some(self.pc)),
-                    MicroOp::PushPCH,
-                    MicroOp::PushPCL,
-                    MicroOp::PushStatusBrkPhp,
-                    MicroOp::FetchInterruptLow,
-                    MicroOp::FetchInterruptHigh,
-                ])
+                queue.push_back(MicroOp::IncrementPC(Some(self.pc)));
+                queue.push_back(MicroOp::PushPCH);
+                queue.push_back(MicroOp::PushPCL);
+                queue.push_back(MicroOp::PushStatusBrkPhp);
+                queue.push_back(MicroOp::FetchInterruptLow);
+                queue.push_back(MicroOp::FetchInterruptHigh);
             }
             0x40 => {
                 // RTI
-                VecDeque::from(vec![
-                    MicroOp::DummyCycle,
-                    MicroOp::IncrementSP(1),
-                    MicroOp::PullStatus,
-                    MicroOp::PullPCL,
-                    MicroOp::PullPCHPlaceholder,
-                ])
+                queue.push_back(MicroOp::DummyCycle);
+                queue.push_back(MicroOp::IncrementSP(1));
+                queue.push_back(MicroOp::PullStatus);
+                queue.push_back(MicroOp::PullPCL);
+                queue.push_back(MicroOp::PullPCHPlaceholder);
             }
             _ => unimplemented!("{}", opcode),
         }
+        queue
     }
 
     fn push_micro_from_placeholder(&mut self, value: Option<u16>) {
@@ -2339,10 +2377,6 @@ impl Cpu {
 
     pub fn get_status_p(&self) -> u8 {
         self.status_p
-    }
-
-    pub fn get_current_inst(&self) -> &VecDeque<MicroOp> {
-        &self.current_inst
     }
 
     pub fn get_memory(&self) -> &[u8; 0x10000] {

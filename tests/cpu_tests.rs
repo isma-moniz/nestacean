@@ -1,4 +1,5 @@
 use nestacean::nes::cpu::Cpu;
+use std::time::Instant;
 
 #[cfg(test)]
 mod test {
@@ -554,5 +555,51 @@ mod test {
         cpu.tick(); //Break
 
         assert_eq!(cpu.get_index_x(), 0xc1);
+    }
+
+    #[test]
+    fn benchmark_all_tests() {
+    let start = Instant::now();
+    
+    // Run all your individual tests
+    test_lda();
+    test_lda_zeroflag();
+    test_lda_negflag();
+    test_lda_zeropage();
+    test_lda_zeropage_x();
+    test_lda_absolute();
+    test_lda_absolute_x();
+    test_lda_absolute_x_pagecross();
+    test_lda_absolute_y();
+    test_lda_absolute_y_pagecross();
+    test_lda_indexed_indirect();
+    test_lda_indirect_indexed();
+    test_lda_indirect_indexed_pagecross();
+    test_sta_zeropage();
+    test_tax();
+    test_tax_zeroflag();
+    test_tax_negflag();
+    test_inx();
+    test_inx_zeroflag();
+    test_inx_negflag();
+    test_dex();
+    test_dey();
+    test_inc_zeropage();
+    test_inc_zeropage_x();
+    test_inc_zeropage_x_no_overflow();
+    test_inc_absolute();
+    test_inc_absolute_x();
+    test_dec_zeropage();
+    test_dec_zeropage_x();
+    test_dec_absolute();
+    test_dec_absolute_x();
+    test_pha();
+    test_php();
+    test_pla();
+    test_plp();
+    test_5_ops();
+    
+    let duration = start.elapsed();
+    println!("All tests completed in: {:?}", duration);
     }
 }
