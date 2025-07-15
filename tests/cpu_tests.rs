@@ -560,7 +560,7 @@ mod test {
     #[test]
     fn benchmark_all_tests() {
     let start = Instant::now();
-    for _ in 1..100 {
+    for _ in 1..1000 {
         // Run all your individual tests
     test_lda();
     test_lda_zeroflag();
