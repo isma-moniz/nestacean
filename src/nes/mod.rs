@@ -62,7 +62,7 @@ impl<'a> NES<'a> {
                 canvas.present();
             }
 
-            std::thread::sleep(std::time::Duration::new(0, 700));
+            std::thread::sleep(std::time::Duration::new(0, 16_667));
         });
     }
 
