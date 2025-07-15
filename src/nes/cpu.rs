@@ -154,6 +154,7 @@ pub struct Cpu {
     debug_active: bool,
     debug_mem_page: u8,
     current_opcode: u8,
+    running: bool,
 }
 
 impl Cpu {
@@ -169,6 +170,7 @@ impl Cpu {
             memory: Box::new([0u8; 0x10000]),
             temp_addr: 0u16,
             page_crossed: false,
+            running: true,
             debug_active: false,
             debug_mem_page: 0u8,
             current_opcode: 0u8, // doesn't really conflict with BRK, because current_inst is empty so the first opcode will be fetched
@@ -510,6 +512,7 @@ impl Cpu {
         self.page_crossed = false;
         self.current_inst = VecDeque::new();
         self.pc = self.mem_read_u16(PC_INIT_LOCATION);
+        self.running = true;
     }
 
     pub fn load_test_game(&mut self) {
@@ -575,6 +578,9 @@ impl Cpu {
     where
         F: FnMut(&mut Cpu),
     {
+        if !self.running {
+            std::process::exit(0);
+        }
         if self.current_inst.is_empty() {
             callback(self);
             self.current_opcode = self.memory[self.pc as usize];
@@ -1881,6 +1887,7 @@ impl Cpu {
             }
             MicroOp::FetchInterruptHigh => {
                 self.pc |= (self.mem_read(INTERRUPT_VEC_HIGH) as u16) << 8;
+                self.running = false; // TODO: research this better
             }
             MicroOp::CopyLowFetchHightoPC => {
                 let high_byte = (self.mem_read(self.pc) as u16) << 8;
