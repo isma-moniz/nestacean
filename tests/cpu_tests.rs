@@ -558,10 +558,10 @@ mod test {
     }
 
     #[test]
-fn benchmark_all_tests() {
+    fn benchmark_all_tests() {
     let start = Instant::now();
-    
-    // Run all your individual tests
+    for _ in 1..100 {
+        // Run all your individual tests
     test_lda();
     test_lda_zeroflag();
     test_lda_negflag();
@@ -598,8 +598,9 @@ fn benchmark_all_tests() {
     test_pla();
     test_plp();
     test_5_ops();
+    }
     
     let duration = start.elapsed();
     println!("All tests completed in: {:?}", duration);
-}
+    }
 }
