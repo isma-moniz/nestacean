@@ -1,4 +1,8 @@
-use std::io::{self, Write};
+use std::io::{self, Write as ioWrite};
+use crate::nes::{
+    bus::Bus,
+    mem::{Read, Write},
+};
 
 const CLS: &str = "\x1B[2J\x1B[1;1H";
 
@@ -183,7 +187,7 @@ pub struct Cpu {
     sp: u8,
     status_p: u8,
     current_inst: InstructionQueue,
-    memory: Box<[u8; 0x10000]>,
+    bus: Bus,
     temp_addr: u16,
     temp_val: u8,
     temp_ptr: u16,
@@ -195,7 +199,7 @@ pub struct Cpu {
 }
 
 impl Cpu {
-    pub fn new() -> Self {
+    pub fn new(bus: Bus) -> Self {
         Self {
             accumulator: 0u8,
             index_x: 0u8,
@@ -204,7 +208,7 @@ impl Cpu {
             sp: 0u8,
             status_p: 0u8,
             current_inst: InstructionQueue::new(),
-            memory: Box::new([0u8; 0x10000]),
+            bus,
             temp_addr: 0u16,
             temp_val: 0u8,
             temp_ptr: 0u16,
@@ -217,13 +221,11 @@ impl Cpu {
     }
 
     pub fn mem_read(&self, pos: u16) -> u8 {
-        self.memory[pos as usize]
+        self.bus.read(pos)
     }
 
     pub fn mem_read_u16(&self, pos: u16) -> u16 {
-        let low_byte = self.mem_read(pos) as u16;
-        let high_byte = self.mem_read(pos + 1) as u16;
-        (high_byte << 8) | low_byte
+        self.bus.read_u16(pos)
     }
 
     pub fn enable_debug(&mut self) {
@@ -231,14 +233,11 @@ impl Cpu {
     }
 
     pub fn mem_write(&mut self, pos: u16, byte: u8) {
-        self.memory[pos as usize] = byte;
+        self.bus.write(pos, byte);
     }
 
     pub fn mem_write_u16(&mut self, pos: u16, bytes: u16) {
-        let low_byte = (bytes & 0xFF) as u8;
-        let high_byte = (bytes >> 8) as u8;
-        self.mem_write(pos, low_byte);
-        self.mem_write(pos + 1, high_byte);
+        self.bus.write_u16(pos, bytes);
     }
 
     fn add_page_cross_penalty(&mut self) {
