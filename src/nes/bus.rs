@@ -1,5 +1,6 @@
 use crate::{
     nes::mem::{Read, Write},
+    nes::cart::Cart,
 };
 
 const RAM_BEGIN: u16 = 0x0000;
@@ -11,12 +12,14 @@ const PPU_MIRROR_BITS: u16 = 0b00100000_00000111;
 
 pub struct Bus {
     pub ram: [u8; 0x0800], // TODO: check if stack allocation is fine for this
+    rom: Cart,
 }
 
 impl Bus {
-    pub fn new() -> Self {
+    pub fn new(rom: Cart) -> Self {
         Bus {
             ram: [0; 0x0800],
+            rom
         }
     }
 
